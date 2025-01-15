@@ -2,6 +2,8 @@
 import numpy as np
 import os
 
+from typing import Literal
+
 try:
     # installed modules
     import tkinter as tk
@@ -25,7 +27,7 @@ except ModuleNotFoundError:
 
 class Bitboard:
 
-    def __init__(self, bb: np.ndarray | None = None, x: int=8, y: int=8) -> None:
+    def __init__(self, bb: np.ndarray | None = None) -> None:
         """Bitboard class.
         Args:
             bb (np.ndarray | None, optional): The bitboard. Defaults to None.
@@ -33,7 +35,7 @@ class Bitboard:
             y (int, optional): The height of the bitboard. Defaults to 8.
             \nbb argument takes priority over x and y."""
         
-        self.bb = np.zeros((x, y), dtype=int) if bb is None else bb
+        self.bb = np.zeros((8, 8), dtype=int) if bb is None else bb
 
     def __setitem__(self, key: tuple[int, int], value: int) -> None:
         self.bb[key] = value
@@ -56,22 +58,105 @@ class Bitboard:
 ###################################################################################################
 
 
-class Piece:
+global PIECE_TAG_INDEX
 
-    def __init__(self, ptype: str, color: int, movement: list[tuple[int,int]], movelong: bool) -> None:
-        """Chess piece class.
+PIECE_TAG_INDEX = 0
+
+
+class Pawn:
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+
+        """Special class for pawns.
         Args:
-            ptype (str): The type of the piece.
-            color (int): The color of the piece.
+            color (Literal['white', 'black']): The colour of the pawn.
         """
 
-        self.type = ptype
+        global PIECE_TAG_INDEX
+
+        self.movement = []
+        self.tag = PIECE_TAG_INDEX + 1
+        PIECE_TAG_INDEX += 1
         self.color = color
-        self.movement = movement
+
+
+class Piece:
+
+    def __init__(self, color: Literal['white', 'black'], movement: list[tuple[int,int]], movelong: bool) -> None:
+        """Chess piece class.
+        Args:
+            color (Literal['white', 'black']): The color of the piece.
+            movement (list[tuple[int,int]]): The short-hand movement of the piece.
+            movelong (bool): Whether the piece can move 'long' or not.
+        """
+
+        global PIECE_TAG_INDEX
+
+        self.tag = PIECE_TAG_INDEX + 1
+        PIECE_TAG_INDEX += 1
+
+        self.color = color
         self.movelong = movelong
+        self.movement = self.expand_movement(movement)
 
         self.bb = Bitboard()
+    
+    def expand_movement(self, short_movement: list[tuple[int,int]]) -> list[tuple[int,int]]:
+        """Expand the short movement list for all cases of movement."""
+
+        mvmt = []
+        for dx, dy in short_movement:
+            for _ in range(2):
+                mvmt.append((dx, dy))
+                mvmt.append((dx, -dy))
+                mvmt.append((-dx, dy))
+                mvmt.append((-dx, -dy))
+                dy, dx = dx, dy
         
+        if not self.movelong:
+            return list(set(mvmt))
+        
+        extended = []
+        for scalar in range(1, 9):
+            for dx, dy in list(set(mvmt)):
+                extended.append((dx * scalar, dy * scalar))
+        return extended
+
+    def copy(self, 
+             color: Literal['white', 'black'] | None = None, 
+             movement: list[tuple[int,int]] | None = None, 
+             movelong: bool | None = None) -> 'Piece':
+        return Piece(self.color if color is None else color,
+                     self.movement if movement is None else movement,
+                     self.movelong if movelong is None else movelong)
+
+
+class Board:
+
+    def __init__(self) -> None:
+
+        class Pieces:
+
+            def __init__(self) -> None:
+
+                self.PAWN = Pawn('white')
+                self.pawn = Pawn('black')
+                self.KNIGHT = Piece('white', [(2,1)], False)
+                self.knight = self.KNIGHT.copy(color='black')
+                self.BISHOP = Piece('white', [(1,1)], True)
+                self.bishop = self.BISHOP.copy(color='black')
+                self.ROOK = Piece('white', [(1,0)], True)
+                self.rook = self.ROOK.copy(color='black')
+                self.QUEEN = Piece('white', [(1,0), (1,1)], True)
+                self.queen = self.QUEEN.copy(color='black')
+                self.KING = self.QUEEN.copy(movelong=False)
+                self.king = self.queen.copy(movelong=False)
+
+        self.p = Pieces()
+        self.board = np.zeros((8, 8), dtype=int)
+
+    def write_bitboards_from_board(self) -> None:
+        """Write the piece bitboards from a board state."""
 
 
 ###################################################################################################
@@ -143,6 +228,10 @@ class Sprites:
 
 def main() -> None:
     """The main program."""
+
+    board = Board()
+
+    print(board.p.QUEEN.movement)
 
     # app = App()
     # app.mainloop()
