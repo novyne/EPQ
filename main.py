@@ -8,8 +8,6 @@ from typing import NewType, Iterable, Literal
 # bots
 from requiem_bot.bot import *
 
-# js some boilerplate imports!!
-
 try:
     # installed modules
     import tkinter as tk
@@ -524,7 +522,7 @@ class Sprites:
 
         self.SCALE = 2
 
-        self.spritesheet = Image.open(parent(__file__) + '/' + path)
+        self.spritesheet = Image.open(os.path.dirname(__file__) + '/' + path)
         self.spritesheet = self.spritesheet.resize((self.spritesheet.width * self.SCALE, self.spritesheet.height * self.SCALE)) # scale
 
         self.sprites: dict[str, Image.Image] = {}
