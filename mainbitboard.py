@@ -59,20 +59,88 @@ class Bitboard:
 
 class Piece:
 
-    def __init__(self, ptype: str, color: int, movement: list[tuple[int,int]], movelong: bool) -> None:
+    def __init__(self, tag: int, color: int, movement: list[tuple[int,int]], movelong: bool) -> None:
         """Chess piece class.
         Args:
-            ptype (str): The type of the piece.
+            tag (int): An identifying integer to find the piece on the board.
             color (int): The color of the piece.
         """
 
-        self.type = ptype
+        self.tag = tag
         self.color = color
-        self.movement = movement
         self.movelong = movelong
+        self.movement = self.determine_movement(movement)
 
         self.bb = Bitboard()
         
+    def determine_movement(self, short_movement: list[tuple[int,int]]) -> list[tuple[int,int]]:
+        """Extend the short list of movements into a full list that can be easily compared.
+        Args:
+            short_movement (list[tuple[int,int]]): The short movement list to be extended."""
+    
+        # add each direction
+        directioned = []
+        for dx, dy in short_movement:
+            for _ in range(2):
+                directioned.append((dx,dy))
+                directioned.append((-dx,dy))
+                directioned.append((dx,-dy))
+                directioned.append((-dx,-dy))
+                dy, dx = dx, dy
+        
+        if not self.movelong:
+            return list(set(directioned))
+
+        # extend in each direction
+        extended = []
+        for scalar in range(1,9):
+            for dx, dy in list(set(directioned)):
+                extended.append((dx * scalar, dy * scalar))
+        
+        return extended
+    
+
+class Pawn:
+
+    def __init__(self, tag: int, color: str) -> None:
+        """Special piece class for pawns.
+        Args:
+            tag (int): An identifying integer to find the piece on the board.
+            color (str): Whether the pawn is white or black.
+        """
+
+        self.color = color
+        self.movement = []
+
+
+
+class Board:
+
+    def __init__(self) -> None:
+
+        class Pieces:
+            def __init__(self) -> None:
+                self.PAWN = Pawn(1, 'white')
+                self.pawn = Pawn(2, 'black')
+                self.KNIGHT = Piece(3, 'white', [(2,1)], False)
+                self.knight = Piece(4, 'black', [(2,1)], False)
+                self.BISHOP = Piece(5, 'white', [(1,1)], True)
+                self.bishop = Piece(6, 'black', [(1,1)], True)
+                self.ROOK = Piece(7, 'white', [(1,0)], True)
+                self.rook = Piece(8, 'black', [(1,0)], True)
+                self.QUEEN = Piece(9, 'white', [(1,0), (1,1)], True)
+                self.queen = Piece(10, 'black', [(1,0), (1,1)], True)
+                self.KING = Piece(11, 'white', [(1,0), (1,1)], False)
+                self.king = Piece(12, 'black', [(1,0), (1,1)], False)
+
+        self.p = Pieces()
+        self.board = np.zeros((8, 8), dtype=int)
+    
+    def save_bitboards(self) -> None:
+        """Update the bitboards for the pieces based on the board state."""
+
+        for x, y in self.board:
+            pass
 
 
 ###################################################################################################
@@ -144,6 +212,10 @@ class Sprites:
 
 def main() -> None:
     """The main program."""
+
+    board = Board()
+
+    print(board.p.QUEEN.movement)
 
     # app = App()
     # app.mainloop()
