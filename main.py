@@ -8,8 +8,6 @@ from typing import NewType, Iterable, Literal
 # bots
 from requiem_bot.bot import *
 
-# js some boilerplate imports!!
-
 try:
     # installed modules
     import tkinter as tk

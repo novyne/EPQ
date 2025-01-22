@@ -19,7 +19,7 @@ except ModuleNotFoundError:
 ####################################################################################################
 
 
-# globals and pre-main functions go here :)
+
 
 
 ###################################################################################################
@@ -58,10 +58,8 @@ class Bitboard:
 ###################################################################################################
 
 
-global PIECE_TAG_INDEX
-
-PIECE_TAG_INDEX = 0
-
+global PIECE_ID_INDEX
+PIECE_ID_INDEX = 0
 
 class Pawn:
 
@@ -72,12 +70,14 @@ class Pawn:
             color (Literal['white', 'black']): The colour of the pawn.
         """
 
-        global PIECE_TAG_INDEX
+        global PIECE_ID_INDEX
 
         self.movement = []
-        self.tag = PIECE_TAG_INDEX + 1
-        PIECE_TAG_INDEX += 1
+        self.id = PIECE_ID_INDEX + 1
+        PIECE_ID_INDEX += 1
         self.color = color
+
+        self.bb = Bitboard()
 
 
 class Piece:
@@ -90,10 +90,10 @@ class Piece:
             movelong (bool): Whether the piece can move 'long' or not.
         """
 
-        global PIECE_TAG_INDEX
+        global PIECE_ID_INDEX
 
-        self.tag = PIECE_TAG_INDEX + 1
-        PIECE_TAG_INDEX += 1
+        self.id = PIECE_ID_INDEX + 1
+        PIECE_ID_INDEX += 1
 
         self.color = color
         self.movelong = movelong
@@ -135,28 +135,64 @@ class Board:
 
     def __init__(self) -> None:
 
-        class Pieces:
-
+        class White:
             def __init__(self) -> None:
-
-                self.PAWN = Pawn('white')
-                self.pawn = Pawn('black')
-                self.KNIGHT = Piece('white', [(2,1)], False)
-                self.knight = self.KNIGHT.copy(color='black')
-                self.BISHOP = Piece('white', [(1,1)], True)
-                self.bishop = self.BISHOP.copy(color='black')
-                self.ROOK = Piece('white', [(1,0)], True)
-                self.rook = self.ROOK.copy(color='black')
-                self.QUEEN = Piece('white', [(1,0), (1,1)], True)
-                self.queen = self.QUEEN.copy(color='black')
-                self.KING = self.QUEEN.copy(movelong=False)
+                self.pawn = Pawn('white')
+                self.knight = Piece('white', [(2,1)], False)
+                self.bishop = Piece('white', [(1,1)], True)
+                self.rook = Piece('white', [(1,0)], True)
+                self.queen = Piece('white', [(1,0), (1,1)], True)
                 self.king = self.queen.copy(movelong=False)
 
-        self.p = Pieces()
+                self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+
+            def print_ids(self) -> None:
+                """Print the IDs of each piece."""
+
+                names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
+                for name, piece in zip(names, self.pieces):
+                    print(f"white {name} : {piece.id}")
+        
+        self.white = w = White()
+
+        class Black:
+            def __init__(self) -> None:
+                self.pawn = Pawn(color='black')
+                self.knight = w.knight.copy(color='black')
+                self.bishop = w.bishop.copy(color='black')
+                self.rook = w.rook.copy(color='black')
+                self.queen = w.queen.copy(color='black')
+                self.king = w.king.copy(color='black')
+
+                self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+
+            def print_ids(self) -> None:
+                """Print the IDs of each piece."""
+
+                names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
+                for name, piece in zip(names, self.pieces):
+                    print(f"black {name} : {piece.id}")
+        
+        self.black = Black()
+
         self.board = np.zeros((8, 8), dtype=int)
 
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
+    
+    def load_default_board(self) -> None:
+        """Load the standard initial board into self.board."""
+
+        struct = [
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            []
+            ]
 
 
 ###################################################################################################
@@ -231,8 +267,9 @@ def main() -> None:
 
     board = Board()
 
-    print(board.p.QUEEN.movement)
-
+    board.white.print_ids()
+    board.black.print_ids()
+    
     # app = App()
     # app.mainloop()
 
