@@ -443,44 +443,405 @@ class Piece:
 
 ```python
 class White:
-            def __init__(self) -> None:
-                self.pawn = Pawn('white')
-                self.knight = Piece('white', [(2,1)], False)
-                self.bishop = Piece('white', [(1,1)], True)
-                self.rook = Piece('white', [(1,0)], True)
-                self.queen = Piece('white', [(1,0), (1,1)], True)
-                self.king = self.queen.copy(movelong=False)
+    def __init__(self) -> None:
+        self.pawn = Pawn('white')
+        self.knight = Piece('white', [(2,1)], False)
+        self.bishop = Piece('white', [(1,1)], True)
+        self.rook = Piece('white', [(1,0)], True)
+        self.queen = Piece('white', [(1,0), (1,1)], True)
+        self.king = self.queen.copy(movelong=False)
 
-                self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+        self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
 
-            def print_ids(self) -> None:
-                """Print the IDs of each piece."""
+    def print_ids(self) -> None:
+        """Print the IDs of each piece."""
 
-                names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
-                for name, piece in zip(names, self.pieces):
-                    print(f"white {name} : {piece.id}")
-        
-        self.white = w = White()
+        names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
+        for name, piece in zip(names, self.pieces):
+            print(f"white {name} : {piece.id}")
 
-        class Black:
-            def __init__(self) -> None:
-                self.pawn = Pawn(color='black')
-                self.knight = w.knight.copy(color='black')
-                self.bishop = w.bishop.copy(color='black')
-                self.rook = w.rook.copy(color='black')
-                self.queen = w.queen.copy(color='black')
-                self.king = w.king.copy(color='black')
+self.white = w = White()
 
-                self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+class Black:
+    def __init__(self) -> None:
+        self.pawn = Pawn(color='black')
+        self.knight = w.knight.copy(color='black')
+        self.bishop = w.bishop.copy(color='black')
+        self.rook = w.rook.copy(color='black')
+        self.queen = w.queen.copy(color='black')
+        self.king = w.king.copy(color='black')
 
-            def print_ids(self) -> None:
-                """Print the IDs of each piece."""
+        self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
 
-                names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
-                for name, piece in zip(names, self.pieces):
-                    print(f"black {name} : {piece.id}")
-        
-        self.black = Black()
+    def print_ids(self) -> None:
+        """Print the IDs of each piece."""
+
+        names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
+        for name, piece in zip(names, self.pieces):
+            print(f"black {name} : {piece.id}")
+
+self.black = Black()
 ```
 
 However, I soon realised this approach was impractical. The two classes share a near-identical function `print_ids` and otherwise have very similar data.
+
+I devised a new approach;
+```python
+PIECE_ID_INDEX = 0
+
+class Piece:
+
+    def __init__(self, color: Literal['white', 'black'], movement: list[tuple[int, int]], movelong: bool) -> None:
+        """Chess piece class.
+        Args:
+            color (Literal['white', 'black']): The color of the piece.
+            movement (list[tuple[int, int]]): The short-hand movement of the piece.
+            movelong (bool): Whether the piece can move 'long' or not.
+        """
+
+        global PIECE_ID_INDEX
+        self.id = PIECE_ID_INDEX + 1
+        PIECE_ID_INDEX += 1
+
+        self.color = color
+        self.movelong = movelong
+        self.movement = self.expand_movement(movement)
+        self.bb = Bitboard()
+
+    def expand_movement(self, short_movement: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        """Expand the short movement list for all cases of movement.
+        Args:
+            short_movement (list[tuple[int,int]]): The short-movement list.
+        Returns:
+            list[tuple[int,int]]: The expanded movement list.
+        """
+
+        mvmt = []
+        for dx, dy in short_movement:
+            for _ in range(2):
+                mvmt.append((dx, dy))
+                mvmt.append((dx, -dy))
+                mvmt.append((-dx, dy))
+                mvmt.append((-dx, -dy))
+                dy, dx = dx, dy
+
+        # if not 'long', return the unique short movements
+        if not self.movelong:
+            return list(set(mvmt))
+
+        # if 'long', scale the movements
+        extended = [(dx * scalar, dy * scalar) for scalar in range(1, 9) for dx, dy in list(set(mvmt))]
+        return extended
+
+    def copy(self, color: Literal['white', 'black'] = None, movement: list[tuple[int, int]] = None, movelong: bool = None) -> 'Piece':
+        """Create a copy of the piece, with optional overrides."""
+
+        return Piece(
+            self.color if color is None else color,
+            self.movement if movement is None else movement,
+            self.movelong if movelong is None else movelong
+        )
+
+class Player:
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+        """Player class to manage pieces for a given colour.
+        Args:
+            color (Literal['white', 'black']): The colour of the piece.
+        """
+
+        self.color = color
+        self.pieces = self.create_pieces(color)
+
+    def create_pieces(self, color: Literal['white', 'black']) -> list[Piece]:
+        """Create pieces based on the color of the player.
+        Args:
+            color (Literal['white', 'black']): The colour of the piece.
+        Returns:
+            list[Piece]: A list of the created pieces.
+        """
+
+        pawn = Pawn(color=color)
+        knight = Piece(color=color, movement=[(2, 1)], movelong=False)
+        bishop = Piece(color=color, movement=[(1, 1)], movelong=True)
+        rook = Piece(color=color, movement=[(1, 0)], movelong=True)
+        queen = Piece(color=color, movement=[(1, 0), (1, 1)], movelong=True)
+        king = queen.copy(color=color, movelong=False)
+
+        return [pawn, knight, bishop, rook, queen, king]
+
+    def print_ids(self) -> None:
+        """Print the IDs of each piece for this player."""
+        names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
+        for name, piece in zip(names, self.pieces):
+            print(f"{self.color} {name} : {piece.id}")
+
+
+class Board:
+
+    def __init__(self) -> None:
+
+        self.white = Player('white')
+        self.black = Player('black')
+        self.board = np.zeros((8, 8), dtype=int)
+```
+
+Now the organisation is much more concise and I do not repeat myself.
+
+However, I realised I don't need a separate function to define the pieces; in fact, it makes my situation harder since I would have to access the pieces by list. Instead, I defined them inside of `Player.__init__`:
+```python
+class Player:
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+        """Player class to manage pieces for a given colour.
+        Args:
+            color (Literal['white', 'black']): The colour of the piece.
+        """
+
+        self.color = color
+
+        self.pawn = Pawn(color=color)
+        self.knight = Piece(color=color, movement=[(2, 1)], movelong=False)
+        self.bishop = Piece(color=color, movement=[(1, 1)], movelong=True)
+        self.rook = Piece(color=color, movement=[(1, 0)], movelong=True)
+        self.queen = Piece(color=color, movement=[(1, 0), (1, 1)], movelong=True)
+        self.king = self.queen.copy(color=color, movelong=False)
+
+        self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+
+    def print_ids(self) -> None:
+        """Print the IDs of each piece for this player."""
+        names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
+        for name, piece in zip(names, self.pieces):
+            print(f"{self.color} {name} : {piece.id}")
+```
+
+I now needed a way to take the state of a board (presumably a numpy 8x8 array using the IDs of the pieces).
+
+To avoid using long statements such as `self.black.rook.id` to collect the IDs, I defined a dictionary as such:
+
+```python
+self.pieces = self.white.pieces.copy() + self.black.pieces.copy()
+
+self.id = {}
+for piece in self.pieces:
+    self.id[piece] = id
+```
+
+Just as I created it, I realised this approach is no better than the first approach. Instead, I would define the structure then iteratively convert each piece into its ID.
+
+```python
+def default(self) -> list[list[int]]:
+    """Return the default Chess board in piece IDs."""
+
+    black = self.black
+    white = self.white
+
+    struct: list[list[Piece | Pawn]] = [
+        [white.rook, white.knight, white.bishop, white.queen, white.king, white.bishop, white.knight, white.rook],
+        [white.pawn] * 8,
+        [0] * 8,
+        [0] * 8,
+        [0] * 8,
+        [0] * 8,
+        [black.pawn] * 8,
+        [black.rook, black.knight, black.bishop, black.queen, black.king, black.bishop, black.knight, black.rook],
+        ]
+    
+    struct_ids: list[list[int]] = []
+    for row in struct:
+        row_ids: list[int] = []
+        for piece in row:
+            row_ids.append(piece.id)
+        struct_ids.append(row_ids)
+    
+    return np.array(struct_ids)
+```
+
+I opted to return a Board instance instead, such that I could create the board in one statement.
+
+```python
+board = np.array(struct_ids)
+return Board(board=board)
+```
+```python
+board = Board().default()
+```
+
+Next, I needed to represent the board in a set of bitboards stored in each pieces' data, then safely forget about the board state.
+
+I iterated through each cell in the board:
+
+```python
+def write_bitboards_from_board(self) -> None:
+    """Write the piece bitboards from a board state."""
+
+    for x in range(8):
+        for y in range(8):
+            cell = self.board[x, y]
+```
+Then created a dictionary to access pieces by their ID:
+```python
+id = {piece.id : piece for piece in self.pieces}
+```
+Lastly, change the bit to 1 where the ID accords to the piece:
+```python
+id[cell].bb[x, y] = 1
+```
+
+The complete function:
+```python
+def write_bitboards_from_board(self) -> None:
+    """Write the piece bitboards from a board state."""
+
+    id = {piece.id : piece for piece in self.pieces}
+
+    for x in range(8):
+        for y in range(8):
+            cell = self.board[x, y]
+            id[cell].bb[x, y] = 1
+```
+
+I appended the function just after the board definition.
+```python
+self.board = np.zeros((8, 8), dtype=int) if board is None else board
+self.write_bitboards_from_board()
+```
+
+#### Troubleshooting
+
+This error arose:
+```
+File "/workspaces/EPQ/mainbitboard.py", line 186, in write_bitboards_from_board
+    id[cell].bb[x, y] = 1
+    ~~^^^^^^
+KeyError: np.int64(0)
+```
+
+I resolved it by ensuring the cell was converted to a normal integer before trying to access the ID.
+```python
+cell = int(self.board[x, y])
+```
+Another error:
+```
+  File "/workspaces/EPQ/mainbitboard.py", line 186, in write_bitboards_from_board
+    id[cell].bb[x, y] = 1
+    ~~^^^^^^
+KeyError: 0
+```
+
+I forgot to account for the missing 0 ID indicating an empty space, so I added a statement to ignore if the ID is 0:
+```python
+cell = int(self.board[x, y])
+if cell == 0: continue
+id[cell].bb[x, y] = 1
+```
+
+The bitboard loading function worked correctly now, however:
+```
+File "/workspaces/EPQ/mainbitboard.py", line 291, in main
+    board = Board().default()
+            ^^^^^^^^^^^^^^^^^
+  File "/workspaces/EPQ/mainbitboard.py", line 214, in default
+    row_ids.append(piece.id)
+                   ^^^^^^^^
+AttributeError: 'int' object has no attribute 'id'
+```
+Initially, I was unsure why the `piece` variable was an integer, so I printed it before the error.
+
+```
+...
+<__main__.Pawn object at 0x7a6fe30102f0>
+<__main__.Pawn object at 0x7a6fe30102f0>
+<__main__.Pawn object at 0x7a6fe30102f0>
+<__main__.Pawn object at 0x7a6fe30102f0>
+0
+Traceback (most recent call last):
+  File "/workspaces/EPQ/mainbitboard.py", line 301, in <module>
+    main()
+    ...
+```
+
+I then realised that the zeros in the structure were in fact integers, and I would need to account for this.
+```python
+for piece in row:
+    if piece == 0:
+        row_ids.append(0)
+    else:
+        row_ids.append(piece.id)
+```
+
+```
+File "/workspaces/EPQ/mainbitboard.py", line 177, in __init__
+    self.write_bitboards_from_board()
+  File "/workspaces/EPQ/mainbitboard.py", line 188, in write_bitboards_from_board
+    id[cell].bb[x, y] = 1
+    ~~^^^^^^
+KeyError: 4
+```
+
+I printed the dictionary as well as creating dunder `__str__` functions for the `Piece` and `Pawn` classes.
+Piece:
+```py
+def __str__(self) -> str:
+    return f"{self.color} piece ID{self.id}"
+```
+Pawn:
+```py
+def __str__(self) -> str:
+    return f"{self.color} pawn ID{self.id}"
+```
+ID dictionary:
+```py
+print('\t'.join([str(k) + ' ' + str(v) for k, v in id.items()]))
+```
+Output:
+```
+13 white pawn ID13      14 white piece ID14     15 white piece ID15     16 white piece ID16     17 white piece ID17     18 white piece ID18     19 black pawn ID19      20 black piece ID20     21 black piece ID21       22 black piece ID22     23 black piece ID23     24 black piece ID24
+```
+
+The mistake was that I had neglected to reset the `PIECE_ID_INDEX` counter after the creation of the board. Since the board was being called as `Board().default()`, 2 board states were being corrected and I would have to reset the counter between the two.
+
+I inserted this at the top of the `Board.__init__` function:
+```py
+global PIECE_ID_INDEX
+PIECE_ID_INDEX = 0
+```
+
+No errors arose this time, but I would have to check the bitboards to ensure their data was loaded correctly.
+```
+ID: 1
+[[0 0 0 0 0 0 0 0]
+ [1 1 1 1 1 1 1 1]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]]
+ID: 2
+[[0 1 0 0 0 0 1 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+
+ ...
+
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 1 0 0 0 0]]
+ID: 12
+[[0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 1 0 0 0]]
+```
+
+The bitboards are working correctly. For example, ID `1` indicates white pawns, and there is a distinct row of 1s shown in its bitboard.
+
+The bitboards display in reverse; bottom to top, left to right. This is why the white pawns are at the top, but when displayed properly, they will be at the bottom.
+
+### Game Logic

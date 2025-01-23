@@ -79,30 +79,38 @@ class Pawn:
 
         self.bb = Bitboard()
 
+    def __str__(self) -> str:
+        return f"{self.color} pawn ID{self.id}"
 
 class Piece:
 
-    def __init__(self, color: Literal['white', 'black'], movement: list[tuple[int,int]], movelong: bool) -> None:
+    def __init__(self, color: Literal['white', 'black'], movement: list[tuple[int, int]], movelong: bool) -> None:
         """Chess piece class.
         Args:
             color (Literal['white', 'black']): The color of the piece.
-            movement (list[tuple[int,int]]): The short-hand movement of the piece.
+            movement (list[tuple[int, int]]): The short-hand movement of the piece.
             movelong (bool): Whether the piece can move 'long' or not.
         """
 
         global PIECE_ID_INDEX
-
-        self.id = PIECE_ID_INDEX + 1
+        self.id = PIECE_ID_INDEX + 1 # this way, 0 is reserved for empty spaces
         PIECE_ID_INDEX += 1
 
         self.color = color
         self.movelong = movelong
         self.movement = self.expand_movement(movement)
-
         self.bb = Bitboard()
-    
-    def expand_movement(self, short_movement: list[tuple[int,int]]) -> list[tuple[int,int]]:
-        """Expand the short movement list for all cases of movement."""
+
+    def __str__(self) -> str:
+        return f"{self.color} piece ID{self.id}"
+
+    def expand_movement(self, short_movement: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        """Expand the short movement list for all cases of movement.
+        Args:
+            short_movement (list[tuple[int,int]]): The short-movement list.
+        Returns:
+            list[tuple[int,int]]: The expanded movement list.
+        """
 
         mvmt = []
         for dx, dy in short_movement:
@@ -112,87 +120,121 @@ class Piece:
                 mvmt.append((-dx, dy))
                 mvmt.append((-dx, -dy))
                 dy, dx = dx, dy
-        
+
+        # if not 'long', return the unique short movements
         if not self.movelong:
             return list(set(mvmt))
-        
-        extended = []
-        for scalar in range(1, 9):
-            for dx, dy in list(set(mvmt)):
-                extended.append((dx * scalar, dy * scalar))
+
+        # if 'long', scale the movements
+        extended = [(dx * scalar, dy * scalar) for scalar in range(1, 9) for dx, dy in list(set(mvmt))]
         return extended
 
-    def copy(self, 
-             color: Literal['white', 'black'] | None = None, 
-             movement: list[tuple[int,int]] | None = None, 
-             movelong: bool | None = None) -> 'Piece':
-        return Piece(self.color if color is None else color,
-                     self.movement if movement is None else movement,
-                     self.movelong if movelong is None else movelong)
+    def copy(self, color: Literal['white', 'black'] = None, movement: list[tuple[int, int]] = None, movelong: bool = None) -> 'Piece':
+        """Create a copy of the piece, with optional overrides."""
+
+        return Piece(
+            self.color if color is None else color,
+            self.movement if movement is None else movement,
+            self.movelong if movelong is None else movelong
+        )
+
+
+class Player:
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+        """Player class to manage pieces for a given colour.
+        Args:
+            color (Literal['white', 'black']): The colour of the piece.
+        """
+
+        self.color = color
+
+        self.pawn = Pawn(color=color)
+        self.knight = Piece(color=color, movement=[(2, 1)], movelong=False)
+        self.bishop = Piece(color=color, movement=[(1, 1)], movelong=True)
+        self.rook = Piece(color=color, movement=[(1, 0)], movelong=True)
+        self.queen = Piece(color=color, movement=[(1, 0), (1, 1)], movelong=True)
+        self.king = self.queen.copy(color=color, movelong=False)
+
+        self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+
+    def print_ids(self) -> None:
+        """Print the IDs of each piece for this player."""
+        names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
+        for name, piece in zip(names, self.pieces):
+            print(f"{self.color} {name} : {piece.id}")
 
 
 class Board:
 
-    def __init__(self) -> None:
+    def __init__(self, board: np.ndarray | None = None) -> None:
+        """The class for the board.
+        Args:
+            board (np.array, optional): A pre-existing array the board can take on. Defaults to an empty board if unspecified.
+        """
 
-        class White:
-            def __init__(self) -> None:
-                self.pawn = Pawn('white')
-                self.knight = Piece('white', [(2,1)], False)
-                self.bishop = Piece('white', [(1,1)], True)
-                self.rook = Piece('white', [(1,0)], True)
-                self.queen = Piece('white', [(1,0), (1,1)], True)
-                self.king = self.queen.copy(movelong=False)
+        global PIECE_ID_INDEX
+        PIECE_ID_INDEX = 0
 
-                self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+        self.white = Player('white')
+        self.black = Player('black')
 
-            def print_ids(self) -> None:
-                """Print the IDs of each piece."""
+        self.pieces: list[Piece] = self.white.pieces.copy() + self.black.pieces.copy()
 
-                names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
-                for name, piece in zip(names, self.pieces):
-                    print(f"white {name} : {piece.id}")
-        
-        self.white = w = White()
-
-        class Black:
-            def __init__(self) -> None:
-                self.pawn = Pawn(color='black')
-                self.knight = w.knight.copy(color='black')
-                self.bishop = w.bishop.copy(color='black')
-                self.rook = w.rook.copy(color='black')
-                self.queen = w.queen.copy(color='black')
-                self.king = w.king.copy(color='black')
-
-                self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
-
-            def print_ids(self) -> None:
-                """Print the IDs of each piece."""
-
-                names = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
-                for name, piece in zip(names, self.pieces):
-                    print(f"black {name} : {piece.id}")
-        
-        self.black = Black()
-
-        self.board = np.zeros((8, 8), dtype=int)
+        self.board = np.zeros((8, 8), dtype=int) if board is None else board
+        if board is not None:
+            self.write_bitboards_from_board()
 
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
-    
-    def load_default_board(self) -> None:
-        """Load the standard initial board into self.board."""
 
-        struct = [
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            []
+        id = {piece.id : piece for piece in self.pieces}
+
+        for x in range(8):
+            for y in range(8):
+                cell = int(self.board[x, y])
+                if cell == 0: continue
+                id[cell].bb[x, y] = 1
+    
+    def default(self) -> 'Board':
+        """Return the default Chess board in piece IDs.
+        Returns:
+            Board: The board instance.
+        """
+
+        black = self.black
+        white = self.white
+
+        struct: list[list[Piece | Pawn | Literal[0]]] = [
+            [white.rook, white.knight, white.bishop, white.queen, white.king, white.bishop, white.knight, white.rook],
+            [white.pawn] * 8,
+            [0] * 8,
+            [0] * 8,
+            [0] * 8,
+            [0] * 8,
+            [black.pawn] * 8,
+            [black.rook, black.knight, black.bishop, black.queen, black.king, black.bishop, black.knight, black.rook],
             ]
+        
+        struct_ids: list[list[int]] = []
+        for row in struct:
+            row_ids: list[int] = []
+            for piece in row:
+                if piece == 0:
+                    row_ids.append(0)
+                else:
+                    row_ids.append(piece.id)
+            struct_ids.append(row_ids)
+        
+        board = np.array(struct_ids)
+        return Board(board=board)
+
+    def display_bitboards(self) -> None:
+        """Print each bitboard for each piece."""
+
+        for piece in self.pieces:
+            print(f"ID: {piece.id}")
+            print(piece.bb)
 
 
 ###################################################################################################
@@ -265,10 +307,8 @@ class Sprites:
 def main() -> None:
     """The main program."""
 
-    board = Board()
-
-    board.white.print_ids()
-    board.black.print_ids()
+    board = Board().default()
+    board.display_bitboards()
     
     # app = App()
     # app.mainloop()
