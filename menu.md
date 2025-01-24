@@ -845,3 +845,220 @@ The bitboards are working correctly. For example, ID `1` indicates white pawns, 
 The bitboards display in reverse; bottom to top, left to right. This is why the white pawns are at the top, but when displayed properly, they will be at the bottom.
 
 ### Game Logic
+
+#### Legal Moves (without check)
+
+The function began as so:
+```python
+def legal_nocheck(self) -> list[list[tuple[int,int], tuple[int,int]]]:
+    """Get all legal moves without checking for checks.
+    Returns:
+        list[list[tuple[int,int], tuple[int,int]]]: A list of pairs of coordinates describing the movement."""
+```
+
+I then figured I would need a function to return pieces that are still present on the board:
+
+```python
+def present_pieces(self) -> list[Piece | Pawn]:
+    """Get the present piece types; i.e. pieces that do not have an empty bitboard.
+    Returns:
+        list[Piece | Pawn]: The list of present pieces.
+    """
+
+    present = []
+    for piece in self.pieces:
+        if piece.bb.any(): # does the bitboard have any 1s?
+            piece.append(present)
+    return present
+```
+
+The beginnings of the function:
+```py
+def legal_nocheck(self) -> list[list[Coordinate, Coordinate]]:
+    """Get all legal moves without checking for checks.
+    Returns:
+        list[list[Coordinate, Coordinate]]: A list of pairs of coordinates describing the movement.
+    """
+
+    present = self.present_pieces()
+
+    for piece in present:
+        if isinstance(piece, Pawn):
+            pass
+        elif isinstance(piece, Piece):
+            for dx, dy in piece.movement():
+                # ?
+```
+
+Here, I would need a means of finding the coordinates of all 1s in each bitboard. Using iteration would render the bitboard redundant, however, `numpy` has a function that does precisely what I need from it. I wrote a new `Bitboard` function:
+```py
+def pos(self) -> list[Coordinate]:
+    """Return the indices of any 1s in the bitboard.
+    Returns:
+        list[Coordinate]: The list of indices pointing to 1s.
+    """
+
+    pos = np.nonzero(self.bb)
+    return list(zip(pos[0], pos[1]))
+```
+
+I then updated the `legal_nocheck` function:
+```python
+present = self.present_pieces()
+
+for piece in present:
+    if isinstance(piece, Pawn):
+        pass
+    elif isinstance(piece, Piece):
+        for x, y in piece.bb.pos():
+            for dx, dy in piece.movement:
+                rx, ry = x + dx, y + dy
+```
+
+`rx` and `ry` now pointed to the resultant coordinates of a piece's movement.
+
+The final few checks involved off-board checks and obstruction checks, which is where I realised my earlier approach to determining movement was inefficient:
+```py
+"""In Piece.expand_movement:"""
+
+# if 'long', scale the movements
+extended = [(dx * scalar, dy * scalar) for scalar in range(1, 9) for dx, dy in list(set(mvmt))]
+return extended
+```
+
+I realised it would be better to instead not scale the movement and scale it whilst checking for obstructions in the legal move checker. I removed the scaling section of `Piece.expand_movement`, and planned to readd it in `legal_nocheck`.
+
+**24/01/25**
+
+```py
+def legal_nocheck(self, color: Literal['white', 'black']) -> list[list[Coordinate, Coordinate]]:
+    """Get all legal moves without checking for checks.
+    Returns:
+        list[list[Coordinate, Coordinate]]: A list of pairs of coordinates describing the movement.
+    """
+
+    white_bb = Bitboard().sum([piece.bb for piece in self.white.pieces])
+    black_bb = Bitboard().sum([piece.bb for piece in self.black.pieces])
+
+    self_bb = white_bb if color == 'white' else black_bb
+    other_bb = black_bb if color == 'white' else white_bb
+```
+
+I added a colour parameter; the colour depends on the legal moves, of course. White pieces cannot take white pieces, for example, and most importantly, only the white player can move white pieces.
+
+Some reorganisation later:
+
+```py
+def legal_nocheck(self, color: Literal['white', 'black']) -> list[list[Coordinate, Coordinate]]:
+    """Get all legal moves without checking for checks.
+    Returns:
+        list[list[Coordinate, Coordinate]]: A list of pairs of coordinates describing the movement.
+    """
+
+    if color not in ['white', 'black']:
+        raise ValueError(f"Incorrect color specified (got {color}, only 'white' and 'black' permitted).")
+
+    self_pieces = self.white.pieces if color == 'white' else self.black.pieces
+    other_pieces = self.black.pieces if color == 'white' else self.white.pieces
+
+    self_bb = Bitboard().sum([piece.bb for piece in self_pieces])
+    other_bb = Bitboard().sum([piece.bb for piece in other_pieces])
+
+    moveable_pieces = list(set(self.present_pieces()) & set(self_pieces))
+    
+    # No legals list: I decided to yield instead.
+```
+
+Starting on the logic:
+
+```py
+for piece in moveable_pieces:
+    if isinstance(piece, Pawn):
+        pass #TODO
+    elif isinstance(piece, Piece):
+        for x, y in piece.bb.pos():
+            for dx, dy in piece.movement:
+                rx, ry = x + dx, y + dy
+
+                # cannot 'capture' own piece
+                if (rx, ry) in self_bb_pos:
+                    continue
+
+                # cannot movelong
+                if not piece.movelong:
+                    yield [(x, y), (rx, ry)]
+                    continue
+```
+
+Now, I needed to work on the scalar. I also ensured to add an out of bounds check for the moveshort pieces.
+```py
+# out of bounds
+if rx not in range(8) or ry not in range(8):
+    continue
+```
+
+For clarity, I moved some code to a new function:
+
+```py
+def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
+    """Get all legal moves for a single piece, specified by class.
+    Args:
+        piece (Piece): The piece to check for legal moves.
+    Returns:
+        Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement."""
+
+    self_pieces = self.white.pieces if piece.color == 'white' else self.black.pieces
+    other_pieces = self.black.pieces if piece.color == 'white' else self.white.pieces
+
+    self_bb = Bitboard().sum([piece.bb for piece in self_pieces])
+    self_bb_pos = self_bb.pos()
+
+    for x, y in piece.bb.pos():
+        for dx, dy in piece.movement:
+            rx, ry = x + dx, y + dy
+
+            # cannot 'capture' own piece
+            if (rx, ry) in self_bb_pos:
+                continue
+            # out of bounds
+            if rx not in range(8) or ry not in range(8):
+                continue
+
+            # cannot movelong
+            if not piece.movelong:
+                yield [(x, y), (rx, ry)]
+                continue
+```
+
+Onto the scalar section. I decided I would iterate with a scalar `s` from 1 to 8, and multiply the magnitude of the direction by `s`. If the path is unobstructed, I would yield the movement, otherwise stop the iteration and continue to the next movement direction.
+
+```py
+
+"""In piece_legal_nocheck:"""
+for s in range(1, 9):
+    # scaled direction and resultant X and Y
+    sdx, sdy = dx * s, dy * s
+    rx, ry = x + sdx, y + sdy
+
+    # cannot be out of bounds
+    if rx not in range(8) or ry not in range(8):
+        break
+
+    # cannot 'capture' own piece
+    if (rx, ry) in self_bb_pos:
+        break
+    # if capturing enemy piece, yield then break
+    if (rx, ry) in other_bb_pos:
+        yield [(x, y), (rx, ry)]
+        break
+
+    # otherwise yield
+    yield [(x, y), (rx, ry)]
+```
+
+To link it back to `legal_nocheck`:
+```py
+"""In legal_nocheck:"""
+for move in self.piece_legal_nocheck(piece):
+    yield move
+```

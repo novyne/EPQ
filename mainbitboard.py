@@ -2,7 +2,7 @@
 import numpy as np
 import os
 
-from typing import Literal
+from typing import Literal, NewType, Iterable
 
 try:
     # installed modules
@@ -19,7 +19,7 @@ except ModuleNotFoundError:
 ####################################################################################################
 
 
-
+Coordinate = NewType('Coordinate', tuple[int,int])
 
 
 ###################################################################################################
@@ -49,10 +49,25 @@ class Bitboard:
         return Bitboard(~self.bb)
     def __str__(self) -> str:
         return str(self.bb)
+    
+    def sum(self, other) -> 'Bitboard':
+        summed = Bitboard(self.bb)
+        for bb in other:
+            summed += bb
+        return summed
 
-    def on(self) -> bool:
+    def any(self) -> bool:
         """Return whether the board contains any bits."""
         return np.any(self.bb)
+    
+    def pos(self) -> list[Coordinate]:
+        """Return the indices of any 1s in the bitboard.
+        Returns:
+            list[Coordinate]: The list of indices pointing to 1s.
+        """
+
+        pos = np.nonzero(self.bb)
+        return list(zip(pos[0], pos[1]))
 
 
 ###################################################################################################
@@ -80,7 +95,7 @@ class Pawn:
         self.bb = Bitboard()
 
     def __str__(self) -> str:
-        return f"{self.color} pawn ID{self.id}"
+        return f"{self.color} pawn ID {self.id}"
 
 class Piece:
 
@@ -102,14 +117,14 @@ class Piece:
         self.bb = Bitboard()
 
     def __str__(self) -> str:
-        return f"{self.color} piece ID{self.id}"
+        return f"{self.color} piece ID {self.id}"
 
     def expand_movement(self, short_movement: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """Expand the short movement list for all cases of movement.
         Args:
-            short_movement (list[tuple[int,int]]): The short-movement list.
+            short_movement (list[Coordinate]): The short-movement list.
         Returns:
-            list[tuple[int,int]]: The expanded movement list.
+            list[Coordinate]: The expanded movement list.
         """
 
         mvmt = []
@@ -121,13 +136,7 @@ class Piece:
                 mvmt.append((-dx, -dy))
                 dy, dx = dx, dy
 
-        # if not 'long', return the unique short movements
-        if not self.movelong:
-            return list(set(mvmt))
-
-        # if 'long', scale the movements
-        extended = [(dx * scalar, dy * scalar) for scalar in range(1, 9) for dx, dy in list(set(mvmt))]
-        return extended
+        return mvmt
 
     def copy(self, color: Literal['white', 'black'] = None, movement: list[tuple[int, int]] = None, movelong: bool = None) -> 'Piece':
         """Create a copy of the piece, with optional overrides."""
@@ -236,6 +245,92 @@ class Board:
             print(f"ID: {piece.id}")
             print(piece.bb)
 
+    def present_pieces(self) -> list[Piece | Pawn]:
+        """Get the present piece types; i.e. pieces that do not have an empty bitboard.
+        Returns:
+            list[Piece | Pawn]: The list of present pieces.
+        """
+
+        present: list[Piece | Pawn] = []
+        for piece in self.pieces:
+            if piece.bb.any(): # does the bitboard have any 1s?
+                piece.append(present)
+        return present
+
+    def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
+        """Get all legal moves for a single piece, specified by class.
+        Args:
+            piece (Piece): The piece to check for legal moves.
+        Returns:
+            Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement."""
+
+        self_pieces = self.white.pieces if piece.color == 'white' else self.black.pieces
+        other_pieces = self.black.pieces if piece.color == 'white' else self.white.pieces
+
+        self_bb = Bitboard().sum([piece.bb for piece in self_pieces])
+        self_bb_pos = self_bb.pos()
+        other_bb = Bitboard().sum([piece.bb for piece in other_pieces])
+        other_bb_pos = other_bb.pos()
+
+        for x, y in piece.bb.pos():
+            for dx, dy in piece.movement:
+                rx, ry = x + dx, y + dy
+
+                # cannot 'capture' own piece
+                if (rx, ry) in self_bb_pos:
+                    continue
+                # out of bounds
+                if rx not in range(8) or ry not in range(8):
+                    continue
+
+                # cannot movelong
+                if not piece.movelong:
+                    yield [(x, y), (rx, ry)]
+                    continue
+
+                for s in range(1, 9):
+                    # scaled direction and resultant X and Y
+                    sdx, sdy = dx * s, dy * s
+                    rx, ry = x + sdx, y + sdy
+
+                    # cannot be out of bounds
+                    if rx not in range(8) or ry not in range(8):
+                        break
+
+                    # cannot 'capture' own piece
+                    if (rx, ry) in self_bb_pos:
+                        break
+                    # if capturing enemy piece, yield then break
+                    if (rx, ry) in other_bb_pos:
+                        yield [(x, y), (rx, ry)]
+                        break
+
+                    # otherwise yield
+                    yield [(x, y), (rx, ry)]
+
+    def legal_nocheck(self, color: Literal['white', 'black']) -> Iterable[list[Coordinate, Coordinate]]:
+        """Get all legal moves without checking for checks.
+        Args:
+            color (Literal['white', 'black']): The colour of the player to check for legal moves.
+        Returns:
+            Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement.
+        """
+
+        if color not in ['white', 'black']:
+            raise ValueError(f"Incorrect color specified (got {color}, only 'white' and 'black' permitted).")
+
+        self_pieces = self.white.pieces if color == 'white' else self.black.pieces
+        other_pieces = self.black.pieces if color == 'white' else self.white.pieces
+
+        moveable_pieces = list(set(self.present_pieces()) & set(self_pieces))
+
+        for piece in moveable_pieces:
+            if isinstance(piece, Pawn):
+                pass #TODO
+            elif isinstance(piece, Piece):
+                for move in self.piece_legal_nocheck(piece):
+                    yield move
+
 
 ###################################################################################################
 
@@ -264,6 +359,10 @@ class App(tk.Tk):
 class Sprites:
 
     """Sprites class."""
+
+    POSITIONS = {
+
+    }
 
     def __init__(self, path: str) -> None:
         """Initialize the sprites."""
@@ -298,7 +397,7 @@ class Sprites:
 ###################################################################################################
 
 
-# functions go here :)
+
 
 
 ###################################################################################################
@@ -308,7 +407,8 @@ def main() -> None:
     """The main program."""
 
     board = Board().default()
-    board.display_bitboards()
+
+    board.legal_nocheck('white')
     
     # app = App()
     # app.mainloop()
