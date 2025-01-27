@@ -522,7 +522,7 @@ class Sprites:
 
         self.SCALE = 2
 
-        self.spritesheet = Image.open(parent(__file__) + '/' + path)
+        self.spritesheet = Image.open(os.path.dirname(__file__) + '/' + path)
         self.spritesheet = self.spritesheet.resize((self.spritesheet.width * self.SCALE, self.spritesheet.height * self.SCALE)) # scale
 
         self.sprites: dict[str, Image.Image] = {}

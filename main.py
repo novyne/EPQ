@@ -33,7 +33,8 @@ class Bitboard:
             bb (np.ndarray | None, optional): The bitboard. Defaults to None.
             x (int, optional): The width of the bitboard. Defaults to 8.
             y (int, optional): The height of the bitboard. Defaults to 8.
-            \nbb argument takes priority over x and y."""
+            \nbb argument takes priority over x and y.
+        """
         
         self.bb = np.zeros((8, 8), dtype=int) if bb is None else bb
 
@@ -188,6 +189,8 @@ class Board:
         self.white = Player('white')
         self.black = Player('black')
 
+        self.turn = self.white
+
         self.pieces: list[Piece] = self.white.pieces.copy() + self.black.pieces.copy()
 
         self.board = np.zeros((8, 8), dtype=int) if board is None else board
@@ -254,7 +257,7 @@ class Board:
         present: list[Piece | Pawn] = []
         for piece in self.pieces:
             if piece.bb.any(): # does the bitboard have any 1s?
-                piece.append(present)
+                present.append(piece)
         return present
 
     def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
@@ -326,7 +329,7 @@ class Board:
 
         for piece in moveable_pieces:
             if isinstance(piece, Pawn):
-                pass #TODO
+                pass #TODO: pawn logic
             elif isinstance(piece, Piece):
                 for move in self.piece_legal_nocheck(piece):
                     yield move
@@ -408,7 +411,10 @@ def main() -> None:
 
     board = Board().default()
 
-    board.legal_nocheck('white')
+    legals = board.legal_nocheck('white')
+
+    for m1, m2 in legals:
+        print(m1[0], m1[1],'to',m2[0], m2[1])
     
     # app = App()
     # app.mainloop()

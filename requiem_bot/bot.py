@@ -5,14 +5,10 @@ rn this thing is **CHEEKS!**"""
 
 # default modules
 import os
-import sys
-
-sys.path.insert(0, "/Users/User/Desktop/vscode/python")
-from imports import *
 
 try:
     # installed modules
-    open(parent(__file__) + '/requirements.txt', 'w').close()
+    open(os.path.dirname(__file__) + '/requirements.txt', 'w').close()
 
 except ModuleNotFoundError:
     print("Installing required modules from requirements.txt (sibling file). Please wait...")
@@ -50,4 +46,4 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n{mc}Goodbye!")
+        print(f"\nGoodbye!")
