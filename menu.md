@@ -1062,3 +1062,23 @@ To link it back to `legal_nocheck`:
 for move in self.piece_legal_nocheck(piece):
     yield move
 ```
+
+#### Cleaning Up
+
+I wanted to take a brief step away from obtaining legal moves, and focus on some other sections that needed more attention.
+
+Firstly, I would change the `Pawn` class to be derived from the `Piece` class for ease.
+
+```py
+class Pawn(Piece):
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+        super().__init__(color, [], False)
+    
+    def copy(self, color: Literal['white', 'black'] = None) -> 'Pawn':
+        """Create a copy of the pawn, with optional overrides."""
+
+        return Pawn(
+            self.color if color is None else color
+        )
+```

@@ -77,27 +77,6 @@ class Bitboard:
 global PIECE_ID_INDEX
 PIECE_ID_INDEX = 0
 
-class Pawn:
-
-    def __init__(self, color: Literal['white', 'black']) -> None:
-
-        """Special class for pawns.
-        Args:
-            color (Literal['white', 'black']): The colour of the pawn.
-        """
-
-        global PIECE_ID_INDEX
-
-        self.movement = []
-        self.id = PIECE_ID_INDEX + 1
-        PIECE_ID_INDEX += 1
-        self.color = color
-
-        self.bb = Bitboard()
-
-    def __str__(self) -> str:
-        return f"{self.color} pawn ID {self.id}"
-
 class Piece:
 
     def __init__(self, color: Literal['white', 'black'], movement: list[tuple[int, int]], movelong: bool) -> None:
@@ -146,6 +125,18 @@ class Piece:
             self.color if color is None else color,
             self.movement if movement is None else movement,
             self.movelong if movelong is None else movelong
+        )
+    
+class Pawn(Piece):
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+        super().__init__(color, [], False)
+    
+    def copy(self, color: Literal['white', 'black'] = None) -> 'Pawn':
+        """Create a copy of the pawn, with optional overrides."""
+
+        return Pawn(
+            self.color if color is None else color
         )
 
 
