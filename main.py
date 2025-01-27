@@ -185,8 +185,12 @@ class Board:
         self.pieces: list[Piece] = self.white.pieces.copy() + self.black.pieces.copy()
 
         self.board = np.zeros((8, 8), dtype=int) if board is None else board
-        if board is not None:
-            self.write_bitboards_from_board()
+        # board is an array of piece IDs
+        self.write_bitboards_from_board()
+        
+        self.id: dict[int, Piece | Pawn] = {}
+        for piece in self.pieces:
+            self.id[piece.id] = piece
 
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
@@ -238,6 +242,28 @@ class Board:
         for piece in self.pieces:
             print(f"ID: {piece.id}")
             print(piece.bb)
+
+    def move(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Move a piece at (x1, x2) to (y1, y2).
+        Args:
+            x1, y1: The coordinates of the start.
+            x2: y2: The coordinates of the end.
+        """
+
+        start_id = self.board[x1, y1]
+        start_piece = self.id[start_id]
+        end_id = self.board[x2, y2]
+        end_piece = self.id[end_id]
+
+        # on start bb: set to 0 at start and set to 1 at end
+        start_piece.bb[x1, y1] = 0
+        start_piece.bb[x2, y2] = 1
+        # on end bb: set to 0 at end
+        end_piece.bb[x2, y2] = 0
+
+        # update board
+        self.board[x1, y1] = 0
+        self.board[x2, y2] = start_id
 
     def present_pieces(self) -> list[Piece | Pawn]:
         """Get the present piece types; i.e. pieces that do not have an empty bitboard.
@@ -405,12 +431,10 @@ def main() -> None:
     legals = board.legal_nocheck('white')
 
     for m1, m2 in legals:
-        print(m1[0], m1[1],'to',m2[0], m2[1])
+        print(f"{chr(m1[0] + 97)}{m1[1] + 1} -> {chr(m2[0] + 97)}{m2[1] + 1}")
     
     # app = App()
     # app.mainloop()
 
 if __name__ == '__main__':
     main()
-
-# sigma skibidi

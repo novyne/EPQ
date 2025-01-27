@@ -1,4 +1,4 @@
-# EPQ Menu
+# EPQ Menu - The Board
 ## Revision 1
 ### Creating of the Board
 
@@ -1067,7 +1067,7 @@ for move in self.piece_legal_nocheck(piece):
 
 I wanted to take a brief step away from obtaining legal moves, and focus on some other sections that needed more attention.
 
-Firstly, I would change the `Pawn` class to be derived from the `Piece` class for ease.
+Firstly, I changed the `Pawn` class to be derived from the `Piece` class for ease.
 
 ```py
 class Pawn(Piece):
@@ -1081,4 +1081,71 @@ class Pawn(Piece):
         return Pawn(
             self.color if color is None else color
         )
+```
+
+Secondly, I wrote a movement function which would both update the board and the bitboards. This would require a dictionary linking a piece ID to the respective piece.
+
+```py
+self.id: dict[int, Piece | Pawn] = {}
+for piece in self.pieces:
+    self.id[piece.id] = piece
+```
+
+```py
+def move(self, x1: int, y1: int, x2: int, y2: int) -> None:
+    """Move a piece at (x1, x2) to (y1, y2).
+    Args:
+        x1, y1: The coordinates of the start.
+        x2: y2: The coordinates of the end.
+    """
+
+    start_id = self.board[x1, y1]
+    start_piece = self.id[start_id]
+    end_id = self.board[x2, y2]
+    end_piece = self.id[end_id]
+
+    # on start bb: set to 0 at start and set to 1 at end
+    start_piece.bb[x1, y1] = 0
+    start_piece.bb[x2, y2] = 1
+    # on end bb: set to 0 at end
+    end_piece.bb[x2, y2] = 0
+```
+
+I debated on whether I should update the board as well. If I didn't need to, I could always remove it later.
+
+```py
+# update board
+self.board[x1, y1] = 0
+self.board[x2, y2] = start_id
+```
+
+I then decided to test the legal move function so far:
+```py
+legals = board.legal_nocheck('white')
+
+for m1, m2 in legals:
+    print(m1[0], m1[1],'to',m2[0], m2[1])
+```
+Output:
+```
+0 1 to 2 2
+0 1 to 2 0
+0 6 to 2 7
+0 6 to 2 5
+```
+
+It worked just fine; only pieces (not pawns) are able to move, and since only knights can jump over pieces, they are the only ones that are capable of movement.
+
+For the future, I formatted the coordinates into Chess coordinates:
+
+```python
+for m1, m2 in legals:
+    print(f"{chr(m1[0] + 97)}{m1[1] + 1} -> {chr(m2[0] + 97)}{m2[1] + 1}")
+```
+Output:
+```
+a2 -> c3
+a2 -> c1
+a7 -> c8
+a7 -> c6
 ```
