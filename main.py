@@ -148,7 +148,7 @@ class Player:
             color (Literal['white', 'black']): The colour of the piece.
         """
 
-        self.color = color
+        self.color: Literal['white','black'] = color
 
         self.pawn = Pawn(color=color)
         self.knight = Piece(color=color, movement=[(2, 1)], movelong=False)
@@ -191,6 +191,15 @@ class Board:
         self.id: dict[int, Piece | Pawn] = {}
         for piece in self.pieces:
             self.id[piece.id] = piece
+
+        
+        self.self_pieces = self.white.pieces if self.turn.color == 'white' else self.black.pieces
+        self.other_pieces = self.black.pieces if self.turn.color == 'white' else self.white.pieces
+
+        self.self_bb = Bitboard().sum([piece.bb for piece in self.self_pieces])
+        self.self_bb_pos = self.self_bb.pos()
+        self.other_bb = Bitboard().sum([piece.bb for piece in self.other_pieces])
+        self.other_bb_pos = self.other_bb.pos()
 
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
@@ -266,38 +275,33 @@ class Board:
         self.board[x2, y2] = start_id
 
     def present_pieces(self) -> list[Piece | Pawn]:
-        """Get the present piece types; i.e. pieces that do not have an empty bitboard.
-        Returns:
-            list[Piece | Pawn]: The list of present pieces.
+        """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
+        return [piece for piece in self.pieces if piece.bb.any()]
+
+    def get_pawn_movement(self, x: int, y: int, pawn: Pawn) -> list[list[Coordinate, Coordinate]]:
+        """Obtain the possible movement of a pawn based on its position and colour.
+        Args:
+            x (int): The X coordinate of the pawn.
+            y (int): The Y coordinate of the pawn.
         """
 
-        present: list[Piece | Pawn] = []
-        for piece in self.pieces:
-            if piece.bb.any(): # does the bitboard have any 1s?
-                present.append(piece)
-        return present
+
+
+        
 
     def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
-        """Get all legal moves for a single piece, specified by class.
+        """Get all legal moves for a single piece, specified by class instance.
         Args:
             piece (Piece): The piece to check for legal moves.
         Returns:
             Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement."""
-
-        self_pieces = self.white.pieces if piece.color == 'white' else self.black.pieces
-        other_pieces = self.black.pieces if piece.color == 'white' else self.white.pieces
-
-        self_bb = Bitboard().sum([piece.bb for piece in self_pieces])
-        self_bb_pos = self_bb.pos()
-        other_bb = Bitboard().sum([piece.bb for piece in other_pieces])
-        other_bb_pos = other_bb.pos()
 
         for x, y in piece.bb.pos():
             for dx, dy in piece.movement:
                 rx, ry = x + dx, y + dy
 
                 # cannot 'capture' own piece
-                if (rx, ry) in self_bb_pos:
+                if (rx, ry) in self.self_bb_pos:
                     continue
                 # out of bounds
                 if rx not in range(8) or ry not in range(8):
@@ -318,10 +322,10 @@ class Board:
                         break
 
                     # cannot 'capture' own piece
-                    if (rx, ry) in self_bb_pos:
+                    if (rx, ry) in self.self_bb_pos:
                         break
                     # if capturing enemy piece, yield then break
-                    if (rx, ry) in other_bb_pos:
+                    if (rx, ry) in self.other_bb_pos:
                         yield [(x, y), (rx, ry)]
                         break
 
@@ -339,10 +343,7 @@ class Board:
         if color not in ['white', 'black']:
             raise ValueError(f"Incorrect color specified (got {color}, only 'white' and 'black' permitted).")
 
-        self_pieces = self.white.pieces if color == 'white' else self.black.pieces
-        other_pieces = self.black.pieces if color == 'white' else self.white.pieces
-
-        moveable_pieces = list(set(self.present_pieces()) & set(self_pieces))
+        moveable_pieces = list(set(self.present_pieces()) & set(self.self_pieces))
 
         for piece in moveable_pieces:
             if isinstance(piece, Pawn):

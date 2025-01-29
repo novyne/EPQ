@@ -1065,6 +1065,8 @@ for move in self.piece_legal_nocheck(piece):
 
 #### Cleaning Up
 
+**27/01/2025**
+
 I wanted to take a brief step away from obtaining legal moves, and focus on some other sections that needed more attention.
 
 Firstly, I changed the `Pawn` class to be derived from the `Piece` class for ease.
@@ -1149,3 +1151,74 @@ a2 -> c1
 a7 -> c8
 a7 -> c6
 ```
+
+**29/01/2025**
+
+Minor refactor:
+
+*Before*
+```py
+def present_pieces(self) -> list[Piece | Pawn]:
+    """Get the present piece types; i.e. pieces that do not have an empty bitboard.
+    Returns:
+        list[Piece | Pawn]: The list of present pieces.
+    """
+
+    present: list[Piece | Pawn] = []
+    for piece in self.pieces:
+        if piece.bb.any(): # does the bitboard have any 1s?
+            present.append(piece)
+    return present
+```
+*After*
+```py
+def present_pieces(self) -> list[Piece | Pawn]:
+    """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
+    return [piece for piece in self.pieces if piece.bb.any()]
+```
+
+#### Pawns
+
+Pawns are arguably and unfortunately the most complex 'piece' in terms of the way it moves, hence why I designated it a separate class.
+
+I first decided to write a function inside the `Pawn` class which takes the X and Y of the respective pawn.
+
+However, the movement of a pawn is also heavily dependent on the board state, so I moved the function to the `Board` class.
+
+```py
+def get_pawn_movement(self, x: int, y: int) -> list[list[Coordinate, Coordinate]]:
+    """Obtain the possible movement of a pawn based on its position and colour.
+    Args:
+        x (int): The X coordinate of the pawn.
+        y (int): The Y coordinate of the pawn.
+    """ 
+```
+
+It may also be easier to pass the Pawn instance to the function as well, meaning that it is easier to identify its colour.
+
+It was around this point where I realised I was repeating the following phrase (or variants of such) frequently:
+```py
+self_pieces = self.white.pieces if pawn.color == 'white' else self.black.pieces
+other_pieces = self.black.pieces if pawn.color == 'white' else self.white.pieces
+
+self_bb = Bitboard().sum([piece.bb for piece in self_pieces])
+self_bb_pos = self_bb.pos()
+other_bb = Bitboard().sum([piece.bb for piece in other_pieces])
+other_bb_pos = other_bb.pos()
+```
+
+Even if the phrase isn't particularly computationally expensive, it might be a good idea to store the data in the `Board` class and redefine it each time I need to obtain the legal moves.
+
+```py
+"""At the bottom of the Board.__init__ constructor:"""
+
+self.self_pieces = self.white.pieces if self.turn.color == 'white' else self.black.pieces
+self.other_pieces = self.black.pieces if self.turn.color == 'white' else self.white.pieces
+
+self.self_bb = Bitboard().sum([piece.bb for piece in self.self_pieces])
+self.self_bb_pos = self.self_bb.pos()
+self.other_bb = Bitboard().sum([piece.bb for piece in self.other_pieces])
+self.other_bb_pos = self.other_bb.pos()
+```
+
+I then went through and replaced all the necessary variable names.
