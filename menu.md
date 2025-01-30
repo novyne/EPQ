@@ -1222,3 +1222,258 @@ self.other_bb_pos = self.other_bb.pos()
 ```
 
 I then went through and replaced all the necessary variable names.
+
+Returning back to the function in question, I would first begin by checking if the space ahead of the pawn is available.
+
+The direction I check in would depend on the colour of the pawn, so:
+
+```py
+"""In get_pawn_movement:"""
+
+movement: list[list[Coordinate, Coordinate]] = []
+
+# y direction to check in
+if pawn.color == 'white':
+    dy = 1
+else:
+    dy = -1
+
+# check for the space ahead
+if (x, y+dy) not in self.all_pos:
+    movement.append([(x, y), (x, y + dy)])
+```
+Next, I would check for any captures possible based on the spaces diagonally in front of the pawn.
+```py
+# capture
+for dx in (1, -1):
+    if (x+dx, y+dy) in self.other_pos:
+        movement.append([(x, y), (x+dx, y+dy)])
+```
+Finally, I would check whether the pawn can move two steps forward. I can save some computational effort by reorgnising the order of operations:
+
+```py
+# y direction to check in
+if color == 'white':
+    dy = 1
+else:
+    dy = -1
+    
+# capture
+for dx in (1, -1):
+    if (x+dx, y+dy) in self.other_pos:
+        movement.append([(x, y), (x+dx, y+dy)])
+
+# check for the space ahead
+if (x, y+dy) not in self.all_pos:
+    movement.append([(x, y), (x, y+dy)])
+```
+
+This way, if the space ahead is not free, I can skip the two-squares check.
+
+```py
+# check if the square ahead is occupied
+if (x, y+dy) in self.all_pos:
+    return movement
+movement.append([(x, y), (x, y+dy)])
+
+# check whether the pawn can move 2 squares forward
+if (x, y+(dy*2)) in self.all_pos:
+    return movement
+if color == 'white' and y == 1:
+    movement.append([(x, y), (x, y+(dy*2))])
+elif color == 'black' and y == 6:
+    movement.append([(x, y), (x, y+(dy*2))])
+return movement
+```
+
+**Final function:**
+```py
+def get_pawn_movement(self, x: int, y: int, color: Literal['white','black']) -> list[list[Coordinate, Coordinate]]:
+    """Obtain the possible movement of a pawn based on its position and colour.
+    Args:
+        x (int): The X coordinate of the pawn.
+        y (int): The Y coordinate of the pawn.
+    """
+
+    movement: list[list[Coordinate, Coordinate]] = []
+
+    # y direction to check in
+    if color == 'white':
+        dy = 1
+    else:
+        dy = -1
+
+    # capture
+    for dx in (1, -1):
+        if (x+dx, y+dy) in self.other_pos:
+            movement.append([(x, y), (x+dx, y+dy)])
+
+    # check if the square ahead is occupied
+    if (x, y+dy) in self.all_pos:
+        return movement
+    movement.append([(x, y), (x, y+dy)])
+
+    # check whether the pawn can move 2 squares forward
+    if (x, y+(dy*2)) in self.all_pos:
+        return movement
+    if color == 'white' and y == 1:
+        movement.append([(x, y), (x, y+(dy*2))])
+    elif color == 'black' and y == 6:
+        movement.append([(x, y), (x, y+(dy*2))])
+    return movement
+```
+The only thing to do now was to insert the movement into `legal_nocheck`.
+```py
+"""In legal_nocheck:"""
+
+for piece in moveable_pieces:
+    if isinstance(piece, Pawn):
+        pass # <-- Here is where I need to insert the function.
+    elif isinstance(piece, Piece):
+        for move in self.piece_legal_nocheck(piece):
+            yield move
+```
+Result:
+```py
+for piece in moveable_pieces:
+    if isinstance(piece, Pawn):
+        for x, y in piece.bb.pos():
+            for move in self.get_pawn_movement(x, y, piece.color):
+                yield move
+    ...
+```
+
+For testing purposes, I commented out the piece movement and ran `legal_nocheck`.
+Output:
+```
+b8 -> b9
+```
+
+This was highly indicative of an error - there is only one move recognised as legal. Furthermore, `b9` is not a valid Chess coordinate.
+
+To start with, I printed out the x and y coordinate and the colour of each pawn as it was being tested.
+
+Output:
+```
+1 0 white
+1 1 white
+1 2 white
+1 3 white
+1 4 white
+1 5 white
+1 6 white
+1 7 white
+b8 -> b9
+```
+This was very strange - the X and Y coordinates appear to have swapped places.
+In an attempt to solve the issue, I reversed the coordinates when calling the function:
+```py
+for piece in moveable_pieces:
+    if isinstance(piece, Pawn):
+        for x, y in piece.bb.pos():
+            for move in self.get_pawn_movement(y, x, piece.color):
+                yield move
+```
+Output:
+```
+0 1 white
+1 1 white
+2 1 white
+c2 -> c3
+c2 -> c4
+3 1 white
+d2 -> d3
+d2 -> d4
+4 1 white
+e2 -> e3
+e2 -> e4
+5 1 white
+f2 -> g3
+f2 -> f3
+f2 -> f4
+6 1 white
+g2 -> h3
+7 1 white
+h2 -> g3
+```
+**30/01/25**
+I figured this had something to do with a mishap with the bitboards, so I printed both bitboards to the console.
+
+```py
+"""In legal_nocheck:"""
+print(self.self_bb)
+print(self.other_bb)
+print(self.turn.pawn.bb)
+```
+Output:
+```
+[[1 1 1 1 1 1 1 1]
+ [1 1 1 1 1 1 1 1]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]]
+[[0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [1 1 1 1 1 1 1 1]
+ [1 1 1 1 1 1 1 1]]
+[[0 0 0 0 0 0 0 0]
+ [1 1 1 1 1 1 1 1]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]]
+```
+Then, I realised the problem arose from the retrieval of the positions of pieces and pawns. The X and Y axes were flipped, so in `Bitboard.pos()`, I reversed the coordinates outputted and changed the coordinates passed into `get_pawn_movement` back to normal.
+```py
+"""In legal_nocheck:"""
+...
+for x, y in piece.bb.pos():
+    for move in self.get_pawn_movement(x, y, piece.color):
+        yield move
+...
+```
+```py
+"""In Bitboard:"""
+def pos(self) -> list[Coordinate]:
+    """Return the indices of any 1s in the bitboard.
+    Returns:
+        list[Coordinate]: The list of indices pointing to 1s.
+    """
+
+    pos = np.nonzero(self.bb)
+    return list(zip(pos[1], pos[0]))
+```
+Output from running `board.legal_nocheck('white')`:
+```
+a2 -> a3
+a2 -> a4
+b2 -> b3
+b2 -> b4
+c2 -> c3
+c2 -> c4
+d2 -> d3
+d2 -> d4
+e2 -> e3
+e2 -> e4
+f2 -> f3
+f2 -> f4
+g2 -> g3
+g2 -> g4
+h2 -> h3
+h2 -> h4
+b1 -> c3
+b1 -> a3
+g1 -> h3
+g1 -> f3
+```
+
+The legal move finder seems to be working just fine so far. The only thing left to do was eliminate moves that put the player's own king at risk of being captured.

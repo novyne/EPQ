@@ -68,7 +68,7 @@ class Bitboard:
         """
 
         pos = np.nonzero(self.bb)
-        return list(zip(pos[0], pos[1]))
+        return list(zip(pos[1], pos[0]))
 
 
 ###################################################################################################
@@ -197,9 +197,11 @@ class Board:
         self.other_pieces = self.black.pieces if self.turn.color == 'white' else self.white.pieces
 
         self.self_bb = Bitboard().sum([piece.bb for piece in self.self_pieces])
-        self.self_bb_pos = self.self_bb.pos()
+        self.self_pos = self.self_bb.pos()
         self.other_bb = Bitboard().sum([piece.bb for piece in self.other_pieces])
-        self.other_bb_pos = self.other_bb.pos()
+        self.other_pos = self.other_bb.pos()
+        self.all_bb = Bitboard().sum([piece.bb for piece in self.pieces])
+        self.all_pos = self.all_bb.pos()
 
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
@@ -278,30 +280,55 @@ class Board:
         """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
         return [piece for piece in self.pieces if piece.bb.any()]
 
-    def get_pawn_movement(self, x: int, y: int, pawn: Pawn) -> list[list[Coordinate, Coordinate]]:
+    def get_pawn_movement(self, x: int, y: int, color: Literal['white','black']) -> list[list[Coordinate, Coordinate]]:
         """Obtain the possible movement of a pawn based on its position and colour.
         Args:
             x (int): The X coordinate of the pawn.
             y (int): The Y coordinate of the pawn.
         """
 
+        movement: list[list[Coordinate, Coordinate]] = []
 
+        # y direction to check in
+        if color == 'white':
+            dy = 1
+        else:
+            dy = -1
 
-        
+        # capture
+        for dx in (1, -1):
+            
+            if (x+dx, y+dy) in self.other_pos:
+                movement.append([(x, y), (x+dx, y+dy)])
+
+        # check if the square ahead is occupied
+        if (x, y+dy) in self.all_pos:
+            return movement
+        movement.append([(x, y), (x, y+dy)])
+
+        # check whether the pawn can move 2 squares forward
+        if (x, y+(dy*2)) in self.all_pos:
+            return movement
+        if color == 'white' and y == 1:
+            movement.append([(x, y), (x, y+(dy*2))])
+        elif color == 'black' and y == 6:
+            movement.append([(x, y), (x, y+(dy*2))])
+        return movement
 
     def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
         """Get all legal moves for a single piece, specified by class instance.
         Args:
             piece (Piece): The piece to check for legal moves.
         Returns:
-            Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement."""
+            Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement.
+        """
 
         for x, y in piece.bb.pos():
             for dx, dy in piece.movement:
                 rx, ry = x + dx, y + dy
 
                 # cannot 'capture' own piece
-                if (rx, ry) in self.self_bb_pos:
+                if (rx, ry) in self.self_pos:
                     continue
                 # out of bounds
                 if rx not in range(8) or ry not in range(8):
@@ -347,7 +374,9 @@ class Board:
 
         for piece in moveable_pieces:
             if isinstance(piece, Pawn):
-                pass #TODO: pawn logic
+                for x, y in piece.bb.pos():
+                    for move in self.get_pawn_movement(x, y, piece.color):
+                        yield move
             elif isinstance(piece, Piece):
                 for move in self.piece_legal_nocheck(piece):
                     yield move
