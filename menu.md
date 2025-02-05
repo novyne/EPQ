@@ -1,8 +1,11 @@
 # EPQ Menu - The Board
+
 ## Revision 1
+
 ### Creating of the Board
 
 I began by using a pre-created template I use for the majority of my Python files.
+
 ```python
 # default modules
 import numpy as np
@@ -27,7 +30,9 @@ except ModuleNotFoundError:
     print("Modules installed. Please restart the script.")
     exit()
 ```
+
 Next, I created a class to hold the information of the chess board.
+
 ```python
 class Board:
     """The board class."""
@@ -37,7 +42,9 @@ class Board:
     Coordinate = NewType('Coordinate', tuple[int, int])
     Move = NewType('Move', tuple[tuple[int, int], tuple[int, int]])
 ```
+
 I began by initialising some `NewType` instances which I could then use to *type-annotate* my functions to improve readability.
+
 ```python
     WHITE = list(range(7,13))
     BLACK = list(range(1,7))
@@ -59,9 +66,11 @@ I began by initialising some `NewType` instances which I could then use to *type
     }
     tokentopiece = ''.join(piecetotoken.keys())
 ```
+
 Next, I represented each colour piece (and pawn) with 12 tokens, in the form of integers. I then created dictionaries (`piecetotoken` and `tokentopiece`) to interchange between string and integer representation for the pieces.
 
 I then began focussing on means of representing the piece's movement. I eventually settled on a list of coordinates attached to each piece token dictating in which directions the piece could move.
+
 ```python
 singlecolmovedirs = {
     6 : [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)],
@@ -81,11 +90,7 @@ for k, v in singlecolmovedirs.items():
 can_move_long = [3,4,5,9,10,11]
 ```
 
-I used iteration to duplicate the movement for the black 
-tokens as well. Additionally, I created a list containing 
-piece tokens which had the ability to 'move long'; i.e. 
-theoretically move infinitely assuming the size of the board
-permitted it.
+I used iteration to duplicate the movement for the black tokens as well. Additionally, I created a list containing piece tokens which had the ability to 'move long'; i.e. theoretically move infinitely assuming the size of the board permitted it.
 
 I then created **FEN** notation to represent the standard
 starting position of a Chess board, as well as create a list
@@ -116,12 +121,14 @@ def __init__(self, x: int = 8, y: int = 8, board = None) -> None:
         else:
             self.board = self.FENtoboard(Board.startFEN)
 ```
+
 I *globalised* the variables passed into the initialise
 statement, as well as give the option to build a board
 based off of an optional parameter.
 
 For testing purposes, I wrote a function that returns a
 text representation of the board when called.
+
 ```python
 def __str__(self) -> str:
         """Return a string representation of the board."""
@@ -267,7 +274,8 @@ poor, and I created a new file to start anew, utilising
 *bitboards* to better and faster represent the pieces.
 
 ## Revision 2
-### Creating of the Board
+
+### The Board
 
 The same boilerplate header:
 
@@ -302,6 +310,7 @@ except ModuleNotFoundError:
 #### Bitboards
 
 I began by creating a Bitboard class, represented by a `numpy` *zeros* 8 by 8 array.
+
 ```python
 class Bitboard:
 
@@ -315,6 +324,7 @@ class Bitboard:
         
         self.bb = np.zeros((8, 8), dtype=int) if bb is None else bb
 ```
+
 I ensured to provide the option to change the X and Y dimensions of the bitboard in case I would need to use bitboards of different sizes.
 
 What follows is a variety of *dunder* functions with examples for each function indicated by three right-facing arrows `>>>`. The bitboard is represented by `bb`.
@@ -325,7 +335,9 @@ def __setitem__(self, key: tuple[int, int], value: int) -> None:
 
 >>> bb[2,3] = 1
 ```
+
 The bit at index 2, 3 is now 1.
+
 ```python
 def __getitem__(self, key: tuple[int, int]) -> int:
     return self.bb[key]
@@ -333,7 +345,9 @@ def __getitem__(self, key: tuple[int, int]) -> int:
 print(bb[2,3])
 >>> Output: 1
 ```
+
 The function has retrieved the bit at index 2, 3.
+
 ```python
 def __add__(self, other: 'Bitboard') -> 'Bitboard':
     return Bitboard(self.bb + other.bb)
@@ -348,25 +362,33 @@ bb3 = bb1 + bb2
 print(bb3[0,0], bb3[0,1])
 >>> Output: 1 1
 ```
+
 These functions act like `or` gates for bitboards. Any instance of 1 in either bitboard results in a 1 in the final bitboard.
+
 ```python
 def __invert__(self) -> 'Bitboard':
     return Bitboard(~self.bb)
 ```
+
 Reverses the polarity of each bit in the bitboard. At the time of writing, this function has no use.
+
 ```python
 def __str__(self) -> str:
     return str(self.bb)
 ```
+
 This function allows the bitboard to be printed.
 
 Lastly, a non-dunder function completes the bitboard thus far.
+
 ```python
 def on(self) -> bool:
     """Return whether the board contains any bits."""
     return np.any(self.bb)
 ```
+
 This function is crucial to determine whether a certain piece type remains on the board. It is much faster and more concise than the previous approach:
+
 ```python
 def onboard(self, piece: int) -> bool:
     """Check if the piece is on the board."""
@@ -377,6 +399,7 @@ def onboard(self, piece: int) -> bool:
                 return True
     return False
 ```
+
 Rather than needing to iterate through the whole board, `numpy` provides a function that returns `True` if all values of the bitboard are not 0.
 
 This is especially helpful to determine checks and checkmate; we can simply check if the respective coloured King bitboard is empty.
@@ -486,6 +509,7 @@ self.black = Black()
 However, I soon realised this approach was impractical. The two classes share a near-identical function `print_ids` and otherwise have very similar data.
 
 I devised a new approach;
+
 ```python
 PIECE_ID_INDEX = 0
 
@@ -589,6 +613,7 @@ class Board:
 Now the organisation is much more concise and I do not repeat myself.
 
 However, I realised I don't need a separate function to define the pieces; in fact, it makes my situation harder since I would have to access the pieces by list. Instead, I defined them inside of `Player.__init__`:
+
 ```python
 class Player:
 
@@ -664,6 +689,7 @@ I opted to return a Board instance instead, such that I could create the board i
 board = np.array(struct_ids)
 return Board(board=board)
 ```
+
 ```python
 board = Board().default()
 ```
@@ -680,16 +706,21 @@ def write_bitboards_from_board(self) -> None:
         for y in range(8):
             cell = self.board[x, y]
 ```
+
 Then created a dictionary to access pieces by their ID:
+
 ```python
 id = {piece.id : piece for piece in self.pieces}
 ```
+
 Lastly, change the bit to 1 where the ID accords to the piece:
+
 ```python
 id[cell].bb[x, y] = 1
 ```
 
 The complete function:
+
 ```python
 def write_bitboards_from_board(self) -> None:
     """Write the piece bitboards from a board state."""
@@ -703,6 +734,7 @@ def write_bitboards_from_board(self) -> None:
 ```
 
 I appended the function just after the board definition.
+
 ```python
 self.board = np.zeros((8, 8), dtype=int) if board is None else board
 self.write_bitboards_from_board()
@@ -711,7 +743,8 @@ self.write_bitboards_from_board()
 #### Troubleshooting
 
 This error arose:
-```
+
+```bash
 File "/workspaces/EPQ/mainbitboard.py", line 186, in write_bitboards_from_board
     id[cell].bb[x, y] = 1
     ~~^^^^^^
@@ -719,11 +752,14 @@ KeyError: np.int64(0)
 ```
 
 I resolved it by ensuring the cell was converted to a normal integer before trying to access the ID.
+
 ```python
 cell = int(self.board[x, y])
 ```
+
 Another error:
-```
+
+```bash
   File "/workspaces/EPQ/mainbitboard.py", line 186, in write_bitboards_from_board
     id[cell].bb[x, y] = 1
     ~~^^^^^^
@@ -731,6 +767,7 @@ KeyError: 0
 ```
 
 I forgot to account for the missing 0 ID indicating an empty space, so I added a statement to ignore if the ID is 0:
+
 ```python
 cell = int(self.board[x, y])
 if cell == 0: continue
@@ -738,7 +775,8 @@ id[cell].bb[x, y] = 1
 ```
 
 The bitboard loading function worked correctly now, however:
-```
+
+```bash
 File "/workspaces/EPQ/mainbitboard.py", line 291, in main
     board = Board().default()
             ^^^^^^^^^^^^^^^^^
@@ -747,9 +785,10 @@ File "/workspaces/EPQ/mainbitboard.py", line 291, in main
                    ^^^^^^^^
 AttributeError: 'int' object has no attribute 'id'
 ```
+
 Initially, I was unsure why the `piece` variable was an integer, so I printed it before the error.
 
-```
+```bash
 ...
 <__main__.Pawn object at 0x7a6fe30102f0>
 <__main__.Pawn object at 0x7a6fe30102f0>
@@ -763,6 +802,7 @@ Traceback (most recent call last):
 ```
 
 I then realised that the zeros in the structure were in fact integers, and I would need to account for this.
+
 ```python
 for piece in row:
     if piece == 0:
@@ -771,7 +811,7 @@ for piece in row:
         row_ids.append(piece.id)
 ```
 
-```
+```bash
 File "/workspaces/EPQ/mainbitboard.py", line 177, in __init__
     self.write_bitboards_from_board()
   File "/workspaces/EPQ/mainbitboard.py", line 188, in write_bitboards_from_board
@@ -782,34 +822,43 @@ KeyError: 4
 
 I printed the dictionary as well as creating dunder `__str__` functions for the `Piece` and `Pawn` classes.
 Piece:
+
 ```py
 def __str__(self) -> str:
     return f"{self.color} piece ID{self.id}"
 ```
+
 Pawn:
+
 ```py
 def __str__(self) -> str:
     return f"{self.color} pawn ID{self.id}"
 ```
+
 ID dictionary:
+
 ```py
 print('\t'.join([str(k) + ' ' + str(v) for k, v in id.items()]))
 ```
+
 Output:
-```
+
+```bash
 13 white pawn ID13      14 white piece ID14     15 white piece ID15     16 white piece ID16     17 white piece ID17     18 white piece ID18     19 black pawn ID19      20 black piece ID20     21 black piece ID21       22 black piece ID22     23 black piece ID23     24 black piece ID24
 ```
 
 The mistake was that I had neglected to reset the `PIECE_ID_INDEX` counter after the creation of the board. Since the board was being called as `Board().default()`, 2 board states were being corrected and I would have to reset the counter between the two.
 
 I inserted this at the top of the `Board.__init__` function:
+
 ```py
 global PIECE_ID_INDEX
 PIECE_ID_INDEX = 0
 ```
 
 No errors arose this time, but I would have to check the bitboards to ensure their data was loaded correctly.
-```
+
+```bash
 ID: 1
 [[0 0 0 0 0 0 0 0]
  [1 1 1 1 1 1 1 1]
@@ -849,6 +898,7 @@ The bitboards display in reverse; bottom to top, left to right. This is why the 
 #### Legal Moves (without check)
 
 The function began as so:
+
 ```python
 def legal_nocheck(self) -> list[list[tuple[int,int], tuple[int,int]]]:
     """Get all legal moves without checking for checks.
@@ -873,6 +923,7 @@ def present_pieces(self) -> list[Piece | Pawn]:
 ```
 
 The beginnings of the function:
+
 ```py
 def legal_nocheck(self) -> list[list[Coordinate, Coordinate]]:
     """Get all legal moves without checking for checks.
@@ -891,6 +942,7 @@ def legal_nocheck(self) -> list[list[Coordinate, Coordinate]]:
 ```
 
 Here, I would need a means of finding the coordinates of all 1s in each bitboard. Using iteration would render the bitboard redundant, however, `numpy` has a function that does precisely what I need from it. I wrote a new `Bitboard` function:
+
 ```py
 def pos(self) -> list[Coordinate]:
     """Return the indices of any 1s in the bitboard.
@@ -903,6 +955,7 @@ def pos(self) -> list[Coordinate]:
 ```
 
 I then updated the `legal_nocheck` function:
+
 ```python
 present = self.present_pieces()
 
@@ -918,6 +971,7 @@ for piece in present:
 `rx` and `ry` now pointed to the resultant coordinates of a piece's movement.
 
 The final few checks involved off-board checks and obstruction checks, which is where I realised my earlier approach to determining movement was inefficient:
+
 ```py
 """In Piece.expand_movement:"""
 
@@ -927,8 +981,6 @@ return extended
 ```
 
 I realised it would be better to instead not scale the movement and scale it whilst checking for obstructions in the legal move checker. I removed the scaling section of `Piece.expand_movement`, and planned to readd it in `legal_nocheck`.
-
-**24/01/25**
 
 ```py
 def legal_nocheck(self, color: Literal['white', 'black']) -> list[list[Coordinate, Coordinate]]:
@@ -991,6 +1043,7 @@ for piece in moveable_pieces:
 ```
 
 Now, I needed to work on the scalar. I also ensured to add an out of bounds check for the moveshort pieces.
+
 ```py
 # out of bounds
 if rx not in range(8) or ry not in range(8):
@@ -1057,6 +1110,7 @@ for s in range(1, 9):
 ```
 
 To link it back to `legal_nocheck`:
+
 ```py
 """In legal_nocheck:"""
 for move in self.piece_legal_nocheck(piece):
@@ -1064,8 +1118,6 @@ for move in self.piece_legal_nocheck(piece):
 ```
 
 #### Cleaning Up
-
-**27/01/2025**
 
 I wanted to take a brief step away from obtaining legal moves, and focus on some other sections that needed more attention.
 
@@ -1122,14 +1174,17 @@ self.board[x2, y2] = start_id
 ```
 
 I then decided to test the legal move function so far:
+
 ```py
 legals = board.legal_nocheck('white')
 
 for m1, m2 in legals:
     print(m1[0], m1[1],'to',m2[0], m2[1])
 ```
+
 Output:
-```
+
+```bash
 0 1 to 2 2
 0 1 to 2 0
 0 6 to 2 7
@@ -1144,19 +1199,20 @@ For the future, I formatted the coordinates into Chess coordinates:
 for m1, m2 in legals:
     print(f"{chr(m1[0] + 97)}{m1[1] + 1} -> {chr(m2[0] + 97)}{m2[1] + 1}")
 ```
+
 Output:
-```
+
+```bash
 a2 -> c3
 a2 -> c1
 a7 -> c8
 a7 -> c6
 ```
 
-**29/01/2025**
-
 Minor refactor:
 
-*Before*
+Before
+
 ```py
 def present_pieces(self) -> list[Piece | Pawn]:
     """Get the present piece types; i.e. pieces that do not have an empty bitboard.
@@ -1170,7 +1226,9 @@ def present_pieces(self) -> list[Piece | Pawn]:
             present.append(piece)
     return present
 ```
-*After*
+
+After
+
 ```py
 def present_pieces(self) -> list[Piece | Pawn]:
     """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
@@ -1197,6 +1255,7 @@ def get_pawn_movement(self, x: int, y: int) -> list[list[Coordinate, Coordinate]
 It may also be easier to pass the Pawn instance to the function as well, meaning that it is easier to identify its colour.
 
 It was around this point where I realised I was repeating the following phrase (or variants of such) frequently:
+
 ```py
 self_pieces = self.white.pieces if pawn.color == 'white' else self.black.pieces
 other_pieces = self.black.pieces if pawn.color == 'white' else self.white.pieces
@@ -1242,13 +1301,16 @@ else:
 if (x, y+dy) not in self.all_pos:
     movement.append([(x, y), (x, y + dy)])
 ```
+
 Next, I would check for any captures possible based on the spaces diagonally in front of the pawn.
+
 ```py
 # capture
 for dx in (1, -1):
     if (x+dx, y+dy) in self.other_pos:
         movement.append([(x, y), (x+dx, y+dy)])
 ```
+
 Finally, I would check whether the pawn can move two steps forward. I can save some computational effort by reorgnising the order of operations:
 
 ```py
@@ -1287,6 +1349,7 @@ return movement
 ```
 
 **Final function:**
+
 ```py
 def get_pawn_movement(self, x: int, y: int, color: Literal['white','black']) -> list[list[Coordinate, Coordinate]]:
     """Obtain the possible movement of a pawn based on its position and colour.
@@ -1322,7 +1385,9 @@ def get_pawn_movement(self, x: int, y: int, color: Literal['white','black']) -> 
         movement.append([(x, y), (x, y+(dy*2))])
     return movement
 ```
+
 The only thing to do now was to insert the movement into `legal_nocheck`.
+
 ```py
 """In legal_nocheck:"""
 
@@ -1333,7 +1398,9 @@ for piece in moveable_pieces:
         for move in self.piece_legal_nocheck(piece):
             yield move
 ```
+
 Result:
+
 ```py
 for piece in moveable_pieces:
     if isinstance(piece, Pawn):
@@ -1345,7 +1412,8 @@ for piece in moveable_pieces:
 
 For testing purposes, I commented out the piece movement and ran `legal_nocheck`.
 Output:
-```
+
+```bash
 b8 -> b9
 ```
 
@@ -1354,7 +1422,8 @@ This was highly indicative of an error - there is only one move recognised as le
 To start with, I printed out the x and y coordinate and the colour of each pawn as it was being tested.
 
 Output:
-```
+
+```bash
 1 0 white
 1 1 white
 1 2 white
@@ -1365,8 +1434,10 @@ Output:
 1 7 white
 b8 -> b9
 ```
+
 This was very strange - the X and Y coordinates appear to have swapped places.
 In an attempt to solve the issue, I reversed the coordinates when calling the function:
+
 ```py
 for piece in moveable_pieces:
     if isinstance(piece, Pawn):
@@ -1374,8 +1445,10 @@ for piece in moveable_pieces:
             for move in self.get_pawn_movement(y, x, piece.color):
                 yield move
 ```
+
 Output:
-```
+
+```bash
 0 1 white
 1 1 white
 2 1 white
@@ -1396,6 +1469,7 @@ g2 -> h3
 7 1 white
 h2 -> g3
 ```
+
 **30/01/25**
 I figured this had something to do with a mishap with the bitboards, so I printed both bitboards to the console.
 
@@ -1405,8 +1479,10 @@ print(self.self_bb)
 print(self.other_bb)
 print(self.turn.pawn.bb)
 ```
+
 Output:
-```
+
+```bash
 [[1 1 1 1 1 1 1 1]
  [1 1 1 1 1 1 1 1]
  [0 0 0 0 0 0 0 0]
@@ -1432,7 +1508,9 @@ Output:
  [0 0 0 0 0 0 0 0]
  [0 0 0 0 0 0 0 0]]
 ```
+
 Then, I realised the problem arose from the retrieval of the positions of pieces and pawns. The X and Y axes were flipped, so in `Bitboard.pos()`, I reversed the coordinates outputted and changed the coordinates passed into `get_pawn_movement` back to normal.
+
 ```py
 """In legal_nocheck:"""
 ...
@@ -1441,6 +1519,7 @@ for x, y in piece.bb.pos():
         yield move
 ...
 ```
+
 ```py
 """In Bitboard:"""
 def pos(self) -> list[Coordinate]:
@@ -1452,8 +1531,10 @@ def pos(self) -> list[Coordinate]:
     pos = np.nonzero(self.bb)
     return list(zip(pos[1], pos[0]))
 ```
+
 Output from running `board.legal_nocheck('white')`:
-```
+
+```bash
 a2 -> a3
 a2 -> a4
 b2 -> b3
@@ -1483,6 +1564,7 @@ The legal move finder seems to be working just fine so far. The only thing left 
 I started by writing a function to check whether the active player's king can be taken. This can be checked by trying every legal move (ignoring king safety), and if the king is not present after any of the moves, the king is in check.
 
 In case I would need it, I wrote a dictionary pointing to the other player than the one given.
+
 ```py
 """In Board:"""
 
@@ -1493,6 +1575,7 @@ self.other_player = {
 ```
 
 The start of the function:
+
 ```py
 def incheck(self, player: Player) -> bool:
     """Check whether the given colour player is in check.
@@ -1524,6 +1607,7 @@ self.last_piece_taken: None | Piece | Pawn = None
 self.last_piece_moved: None | Piece | Pawn = None
 self.last_move: None | tuple[Coordinate, Coordinate] = None
 ```
+
 ```py
 """In Board.move:"""
 ...
@@ -1532,6 +1616,7 @@ self.last_piece_taken = end_piece
 self.last_piece_moved = start_piece
 self.last_move = (x1, y1), (x2, y2)
 ```
+
 ```py
 """In Board:"""
 def undo(self) -> None:
@@ -1618,6 +1703,7 @@ def __str__(self) -> str:
 ```
 
 Output of the following script:
+
 ```py
 [(x1, y1), (x2, y2)] = rn.choice(legals)
 print("Random move:",x1,y1,x2,y2)
@@ -1625,7 +1711,8 @@ board.move(x1,y1,x2,y2)
 
 print(board)
 ```
-```
+
+```bash
 Random move: 6 0 5 2
 10      8       9       11      12      9       8       10
 7       7       7       7       7       7       7       7
@@ -1642,7 +1729,8 @@ The move function worked just fine. Now I would have to test the undo function.
 I ran the move function, then undid the move. When I printed the board state after, I would expect to see the original board state.
 
 *Output:*
-```
+
+```bash
 Random move: 0 1 0 2
 10      8       9       11      12      9       8       10
 7       7       7       7       7       7       7       7
@@ -1657,6 +1745,7 @@ Random move: 0 1 0 2
 Notice how there is a missing **pawn on a2**. This is the original position of the pawn that moved, and isn't being reset correctly.
 
 The function:
+
 ```py
 
 def undo(self) -> None:
@@ -1674,6 +1763,7 @@ def undo(self) -> None:
 ```
 
 The function after amendments:
+
 ```py
 def undo(self) -> None:
     """Undo the previous move."""
@@ -1687,8 +1777,10 @@ def undo(self) -> None:
     self.last_piece_moved.bb[x1, y1] = 1
     self.board[x1, y1] = self.last_piece_moved.id
 ```
+
 Output:
-```
+
+```bash
 Random move: 3 1 3 3
 10      8       9       11      12      9       8       10
 7       7       7       7       7       7       7       7
@@ -1718,6 +1810,7 @@ def incheck(self, player: Player) -> bool:
 ```
 
 I had a process in mind:
+
 * Collect all legal moves,
 * iterate through each one and attempt it on the board,
 * run a separate function to check if the king can be taken,
@@ -1734,7 +1827,9 @@ First, I needed to write the function to check if the king can be taken.
         bool: Whether the colour king can be taken.
     """
 ```
+
 The process:
+
 * Get the other player's legal moves,
 * play each move,
 * if the king is not present, return `True` and break the loop,
@@ -1777,6 +1872,7 @@ def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
 Notice how `self.move` returns a board state. I planned to update the function accordingly. This way, I could make moves without updating important variables in the original board.
 
 New functions:
+
 ```py
 def move(self, x1: int, y1: int, x2: int, y2: int) -> 'Board':
     """Move a piece at (x1, y1) to (x2, y2).
@@ -1823,6 +1919,7 @@ def move(self, x1: int, y1: int, x2: int, y2: int) -> 'Board':
 ```
 
 Returning to the `legal_move` function:
+
 ```py
 def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
     """Find all legal moves on the board.
@@ -1840,12 +1937,14 @@ def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
 ```
 
 For the final step, I needed to write `isking_vulnerable`. The steps for the function are below:
+
 * Obtain and iterate through the legal moves for the other player
 * Check for the presence of the king
-    * If it is missing, return `True`
+  * If it is missing, return `True`
 * If the iteration completes, return `False`.
 
 The complete function:
+
 ```py
 def isking_vulnerable(self) -> bool:
     """Return whether the turn player's king can be taken.
@@ -1868,6 +1967,7 @@ def isking_vulnerable(self) -> bool:
 ```
 
 Running the below test:
+
 ```py
 board = Board().default()
 
@@ -1880,7 +1980,8 @@ print(board)
 ```
 
 The following logic error occurred:
-```
+
+```bash
 b3 -> c3
 10      8       9       11      12      9       8       10
 7       7       7       7       7       7       7       7
@@ -1893,6 +1994,7 @@ b3 -> c3
 ```
 
 It seems like I had forgot to undo the board state afterwards.
+
 ```py
 def isking_vulnerable(self) -> bool:
         """Return whether the turn player's king can be taken.
@@ -1917,7 +2019,8 @@ def isking_vulnerable(self) -> bool:
 ```
 
 The result:
-```
+
+```bash
 b3 -> c3
 b3 -> a3
 g3 -> h3
@@ -2014,7 +2117,7 @@ class Sprites:
 
 I then began work on a spritesheet, and following some inspiration from pixel art online, I created this:
 
-<img src="spritesheet.png">
+<img alt="No alt text" src="spritesheet.png">
 
 Each visual component I needed was laid out on the board, and all I would need to do is fill `Sprites.POSITIONS` with the ID and dimension of the sprite.
 
@@ -2107,6 +2210,7 @@ Below is the beginnings of a plan for `App.draw_board`:
 * Obtain the sprite by ID and place it at the coordinates based on scale
 
 The function so far:
+
 ```py
 def draw_board(self, board: Board) -> None:
     """Load the given board.
@@ -2128,14 +2232,17 @@ def draw_board(self, board: Board) -> None:
 ```
 
 I then went back to `main.py` and imported the necessary files, then tested the function.
-```
+
+```bash
 ImportError: cannot import name 'App' from partially initialized module 'interface' (most likely due to a circular import) (/workspaces/EPQ/interface.py)
 ```
+
 This function is a consequence of a *circular import*, and is unfortunately frustrating to fix. It occurs when two files attempt to import each other and cannot do so as the imports simply continue in a circle.
 
 I would unfortunately have to sacrifice some type annotations such that `interface.py` would no longer depend on `main.py`.
 
 The new `interface.py` file:
+
 ```py
 import os
 import tkinter as tk
@@ -2259,4 +2366,3 @@ class Sprites:
             cv.images = []  # create if it doesn't exist
         cv.images.append(tk_sprite)
 ```
-
