@@ -5,6 +5,8 @@ import random as rn
 
 from typing import Literal, NewType, Iterable
 
+from interface import App
+
 try:
     # installed modules
     import tkinter as tk
@@ -479,68 +481,6 @@ class Board:
 ###################################################################################################
 
 
-class App(tk.Tk):
-
-    """Main application class."""
-
-    def __init__(self) -> None:
-        """Initialize the application."""
-
-        super().__init__()
-
-        self.title('App Template')
-
-        self.cv = tk.Canvas(self, width=640, height=640, bg="white")
-        self.cv.pack()
-        
-        self.s = Sprites("spritesheet.png")
-        self.sprites = self.s.sprites
-
-
-###################################################################################################
-
-
-class Sprites:
-
-    """Sprites class."""
-
-    POSITIONS = {
-
-    }
-
-    def __init__(self, path: str) -> None:
-        """Initialize the sprites."""
-
-        self.SCALE = 2
-
-        self.spritesheet = Image.open(os.path.dirname(__file__) + '/' + path)
-        self.spritesheet = self.spritesheet.resize((self.spritesheet.width * self.SCALE, self.spritesheet.height * self.SCALE)) # scale
-
-        self.sprites: dict[str, Image.Image] = {}
-        self.load()
-
-    def load(self) -> None:
-        """Load the sprites."""
-
-        for name, ((x1, y1), (x2, y2)) in Sprites.POSITIONS.items():
-            self.sprites[name] = self.spritesheet.crop((x1 * self.SCALE, y1 * self.SCALE, x2 * self.SCALE, y2 * self.SCALE))
-    
-    def place(self, cv: tk.Canvas, spritename: str, x: int, y: int) -> None:
-        """Place a sprite on the board."""
-
-        sprite = self.sprites[spritename]
-        tk_sprite = ImageTk.PhotoImage(sprite)
-
-        cv.create_image(x * self.SCALE, y * self.SCALE, image=tk_sprite, anchor="nw")
-
-        if not hasattr(cv, 'images'):
-            cv.images = []  # create if it doesn't exist
-        cv.images.append(tk_sprite)
-
-
-###################################################################################################
-
-
 
 
 
@@ -551,16 +491,9 @@ def main() -> None:
     """The main program."""
 
     board = Board().default()
-
-    legals = list(board.legal_moves())
-
-    for m1, m2 in legals:
-        print(f"{chr(m1[0] + 97)}{m1[1] + 1} -> {chr(m2[0] + 97)}{m2[1] + 1}")
-
-    print(board)
     
-    # app = App()
-    # app.mainloop()
+    app = App()
+    app.mainloop()
 
 if __name__ == '__main__':
     main()
