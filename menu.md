@@ -1476,4 +1476,480 @@ g1 -> h3
 g1 -> f3
 ```
 
+#### Check
+
 The legal move finder seems to be working just fine so far. The only thing left to do was eliminate moves that put the player's own king at risk of being captured.
+
+I started by writing a function to check whether the active player's king can be taken. This can be checked by trying every legal move (ignoring king safety), and if the king is not present after any of the moves, the king is in check.
+
+In case I would need it, I wrote a dictionary pointing to the other player than the one given.
+```py
+"""In Board:"""
+
+self.other_player = {
+    self.white : self.black,
+    self.black : self.white
+}
+```
+
+The start of the function:
+```py
+def incheck(self, player: Player) -> bool:
+    """Check whether the given colour player is in check.
+    Args:
+        player (Player): The player to check for check.
+    Returns:
+        bool: Whether the colour king is in check.
+    """
+
+    legals = self.legal_nocheck(self.other_player[player])
+    test_board = Board.copy()
+```
+
+At this point, I realised I would need a means of copying the board to avoid the original board being affected. All I would need to do was write a dunder function returning a `Board` instance with the same board parameter:
+
+```py
+"""In Board:"""
+def copy(self) -> 'Board':
+    """Return a duplicate Board instance."""
+    return Board(self.board)
+```
+
+I would also need a means of reversing a move performed. I can do this by storing the data of any piece taken and the position the piece moved from after a move is made.
+
+```py
+"""In Board.__init__:"""
+
+self.last_piece_taken: None | Piece | Pawn = None
+self.last_piece_moved: None | Piece | Pawn = None
+self.last_move: None | tuple[Coordinate, Coordinate] = None
+```
+```py
+"""In Board.move:"""
+...
+# update last move data
+self.last_piece_taken = end_piece
+self.last_piece_moved = start_piece
+self.last_move = (x1, y1), (x2, y2)
+```
+```py
+"""In Board:"""
+def undo(self) -> None:
+    """Undo the previous move."""
+
+    (x1, y1), (x2, y2) = self.last_move
+
+    self.last_piece_taken.bb[x2, y2] = 1
+    self.board[x2, y2] = self.last_piece_taken.id
+
+    self.last_piece_moved.bb[x2, y2] = 0
+    self.last_piece_moved.bb[x1, y1] = 1
+    self.board[x1, y1] = self.last_piece.taken.id
+```
+
+I then tested the function by playing a random 'legal' move using `legal_nocheck`.
+
+```py
+import random as rn # Ln 4
+...
+"""In main:"""
+legals = list(board.legal_nocheck('white'))
+
+# for m1, m2 in legals:
+#     print(f"{chr(m1[0] + 97)}{m1[1] + 1} -> {chr(m2[0] + 97)}{m2[1] + 1}")
+
+[(x1, y1), (x2, y2)] = rn.choice(legals)
+print("Random move:",x1,y1,x2,y2)
+board.move(x1,y1,x2,y2)
+```
+
+Additionally, I moved some code into a new function below:
+
+```py
+def update_piece_bitboard_data(self) -> None:
+    """Procedure to update important information regarding the pieces and bitboards."""
+
+    self.self_bb = Bitboard().sum([piece.bb for piece in self.self_pieces])
+    self.self_pos = self.self_bb.pos()
+    self.other_bb = Bitboard().sum([piece.bb for piece in self.other_pieces])
+    self.other_pos = self.other_bb.pos()
+    self.all_bb = Bitboard().sum([piece.bb for piece in self.pieces])
+    self.all_pos = self.all_bb.pos()
+```
+
+And subsequently called this function at the end of `Board.move`.
+
+However, there was a problem with the move function. Similar to the issue with the Bitboard coordinates being incorrectly swapped, the same issue was occurring with Board.move.
+
+Resolved by adding these lines at the top of `Board.move`:
+
+```py
+x1, y1 = y1, x1
+x2, y2 = y2, x2
+```
+
+However, more problems arose when the function tried to access a piece with ID 0 - an empty square. To solve this, I can create an `empty` piece with ID 0:
+
+```py
+"""In Board.__init__:"""
+self.empty_piece = Piece(None, [(0,0)], False)
+self.white = Player('white')
+self.black = Player('black')
+self.other_player = {
+    self.white : self.black,
+    self.black : self.white
+}
+
+self.turn = self.white
+
+self.pieces: list[Piece] = [self.empty_piece] + self.white.pieces.copy() + self.black.pieces.copy()
+```
+
+For testing reasons, I created a dunder `__str__` function so I could print the board.
+
+```py
+def __str__(self) -> str:
+    s = ''
+    for x in range(7, -1, -1):
+        for y in self.board[x]:
+            s += str(y) + '\t'
+        s += '\n'
+    return s
+```
+
+Output of the following script:
+```py
+[(x1, y1), (x2, y2)] = rn.choice(legals)
+print("Random move:",x1,y1,x2,y2)
+board.move(x1,y1,x2,y2)
+
+print(board)
+```
+```
+Random move: 6 0 5 2
+10      8       9       11      12      9       8       10
+7       7       7       7       7       7       7       7
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       2       0       0
+1       1       1       1       1       1       1       1
+4       2       3       5       6       3       0       4
+```
+
+The move function worked just fine. Now I would have to test the undo function.
+
+I ran the move function, then undid the move. When I printed the board state after, I would expect to see the original board state.
+
+*Output:*
+```
+Random move: 0 1 0 2
+10      8       9       11      12      9       8       10
+7       7       7       7       7       7       7       7
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       1       1       1       1       1       1       1
+4       2       3       5       6       3       2       4
+```
+
+Notice how there is a missing **pawn on a2**. This is the original position of the pawn that moved, and isn't being reset correctly.
+
+The function:
+```py
+
+def undo(self) -> None:
+    """Undo the previous move."""
+
+    (x1, y1), (x2, y2) = self.last_move
+
+    self.last_piece_taken.bb[x2, y2] = 1
+    self.board[x2, y2] = self.last_piece_taken.id
+
+    self.last_piece_moved.bb[x2, y2] = 0
+    self.last_piece_moved.bb[x1, y1] = 1
+    self.board[x1, y1] = self.last_piece_taken.id
+    # ^ The error is here. Instead of setting the board state to the last piece moved, I am incorrectly setting it to the last piece taken.
+```
+
+The function after amendments:
+```py
+def undo(self) -> None:
+    """Undo the previous move."""
+
+    (x1, y1), (x2, y2) = self.last_move
+
+    self.last_piece_taken.bb[x2, y2] = 1
+    self.board[x2, y2] = self.last_piece_taken.id
+
+    self.last_piece_moved.bb[x2, y2] = 0
+    self.last_piece_moved.bb[x1, y1] = 1
+    self.board[x1, y1] = self.last_piece_moved.id
+```
+Output:
+```
+Random move: 3 1 3 3
+10      8       9       11      12      9       8       10
+7       7       7       7       7       7       7       7
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+1       1       1       1       1       1       1       1
+4       2       3       5       6       3       2       4
+```
+
+This is the original board state, so I can safely assume the move and undo functions work as expected. I can now begin work on the `check` function.
+
+A reminder of the function so far:
+
+```py
+def incheck(self, player: Player) -> bool:
+    """Evaluate whether the given colour player is in check.
+    Args:
+        player (Player): The player to check for check.
+    Returns:
+        bool: Whether the colour king is in check.
+    """
+
+    legals = self.legal_nocheck(self.other_player[player])
+    test_board = Board.copy()
+```
+
+I had a process in mind:
+* Collect all legal moves,
+* iterate through each one and attempt it on the board,
+* run a separate function to check if the king can be taken,
+* if it returns true, the player is in check and the loop breaks.
+
+First, I needed to write the function to check if the king can be taken.
+
+```py
+ def isking_vulnerable(self, player: Player) -> bool:
+    """Evaluate whether a player king can be taken.
+    Args:
+        player (Player): The player to check for a vulnerable king.
+    Returns:
+        bool: Whether the colour king can be taken.
+    """
+```
+The process:
+* Get the other player's legal moves,
+* play each move,
+* if the king is not present, return `True` and break the loop,
+* otherwise return `False`.
+
+Partway through the creation of this function, I realised it was turning out very similar to `incheck`. Instead, I could use *recursion*, which is slightly more computationally expensive but otherwise okay.
+
+Unfortunately, around this point, I noticed another problem. All the colour parameters in the function are redundant since I still use the same data. I went through and removed them.
+
+This would mean that I would need to pass `turn` as a parameter into the `Board.__init__` constructor:
+
+```py
+def __init__(self, turn: Player, board: np.ndarray | None = None) -> None:
+...
+def swap_turn(self) -> 'Board':
+    """Swap the turn of the board."""
+    swapped_turn = self.other_player[self.turn]
+    return Board(swapped_turn, self.board)
+```
+
+Returning back to the `incheck` function.
+
+In the meantime, I had devised a new approach below:
+
+```py
+def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
+    """Find all legal moves on the board.
+    Returns:
+        Iterable[list[Coordinate, Coordinate]]: The legal moves in pairs of coordinates.
+    """
+
+    legals_nocheck = self.legal_nocheck()
+
+    for [(x1, y1), (x2, y2)] in legals_nocheck:
+        board = self.move(x1, y1, x2, y2)
+        if not board.isking_vulnerable():
+            yield [(x1, y2), (x2, y2)]
+```
+
+Notice how `self.move` returns a board state. I planned to update the function accordingly. This way, I could make moves without updating important variables in the original board.
+
+New functions:
+```py
+def move(self, x1: int, y1: int, x2: int, y2: int) -> 'Board':
+    """Move a piece at (x1, y1) to (x2, y2).
+    Args:
+        x1, y1: The coordinates of the start.
+        x2: y2: The coordinates of the end.
+    Returns:
+        Board: The new board state.
+    """
+
+    new = self.copy()
+
+    # swap coordinates due to strange access error
+    x1, y1 = y1, x1
+    x2, y2 = y2, x2
+
+    start_id = new.board[x1, y1]
+    start_piece = new.id[start_id]
+    end_id = new.board[x2, y2]
+    end_piece = new.id[end_id]
+
+    # on start bb: set to 0 at start and set to 1 at end
+    start_piece.bb[x1, y1] = 0
+    start_piece.bb[x2, y2] = 1
+    # on end bb: set to 0 at end
+    end_piece.bb[x2, y2] = 0
+
+    # update board
+    new.board[x1, y1] = 0
+    new.board[x2, y2] = start_id
+
+    # update last move data
+    new.last_piece_taken = end_piece
+    new.last_piece_moved = start_piece
+    new.last_move = (x1, y1), (x2, y2)
+
+    # switch turn
+    new.turn = new.other_player[new.turn]
+
+    # update crucial bitboard data
+    new.update_piece_bitboard_data()
+
+    return new
+```
+
+Returning to the `legal_move` function:
+```py
+def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
+    """Find all legal moves on the board.
+    Returns:
+        Iterable[list[Coordinate, Coordinate]]: The legal moves in pairs of coordinates.
+    """
+
+    legals_nocheck = self.legal_nocheck()
+
+    for [(x1, y1), (x2, y2)] in legals_nocheck:
+        board = self.move(x1, y1, x2, y2)
+        if not board.isking_vulnerable():
+            yield [(x1, y2), (x2, y2)]
+        board.undo()
+```
+
+For the final step, I needed to write `isking_vulnerable`. The steps for the function are below:
+* Obtain and iterate through the legal moves for the other player
+* Check for the presence of the king
+    * If it is missing, return `True`
+* If the iteration completes, return `False`.
+
+The complete function:
+```py
+def isking_vulnerable(self) -> bool:
+    """Return whether the turn player's king can be taken.
+    Returns:
+        bool: True if the king can be taken, otherwise False.
+    """
+
+    # obtain the legal moves for the other player
+    other_board = self.swap_turn()
+    other_legals_nocheck = other_board.legal_nocheck()
+
+    for [(x1, y1), (x2, y2)] in other_legals_nocheck:
+        board = other_board.move(x1, y1, x2, y2)
+        king = board.other_player[board.turn.color].king # obtain the CURRENT player's king
+        
+        # if the king is not present, return True
+        if not king.bb.any():
+            return True
+    return False
+```
+
+Running the below test:
+```py
+board = Board().default()
+
+legals = list(board.legal_moves())
+
+for m1, m2 in legals:
+    print(f"{chr(m1[0] + 97)}{m1[1] + 1} -> {chr(m2[0] + 97)}{m2[1] + 1}")
+
+print(board)
+```
+
+The following logic error occurred:
+```
+b3 -> c3
+10      8       9       11      12      9       8       10
+7       7       7       7       7       7       7       7
+0       0       0       0       0       0       0       0
+1       1       1       1       0       0       0       0
+0       0       0       0       1       1       1       1
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       2
+0       0       0       0       0       0       5       0
+```
+
+It seems like I had forgot to undo the board state afterwards.
+```py
+def isking_vulnerable(self) -> bool:
+        """Return whether the turn player's king can be taken.
+        Returns:
+            bool: True if the king can be taken, otherwise False.
+        """
+
+        # obtain the legal moves for the other player
+        other_board = self.swap_turn()
+        other_legals_nocheck = other_board.legal_nocheck()
+
+        for [(x1, y1), (x2, y2)] in other_legals_nocheck:
+            board = other_board.move(x1, y1, x2, y2)
+            king = board.other_player[board.turn.color].king # obtain the CURRENT player's king
+            
+            # if the king is not present, return True
+            if not king.bb.any():
+                return True
+            
+            board.undo() # <-- This should fix the error.
+        return False
+```
+
+The result:
+```
+b3 -> c3
+b3 -> a3
+g3 -> h3
+g3 -> f3
+a3 -> a3
+a4 -> a4
+b3 -> b3
+b4 -> b4
+c3 -> c3
+c4 -> c4
+d3 -> d3
+d4 -> d4
+e3 -> e3
+e4 -> e4
+f3 -> f3
+f4 -> f4
+g3 -> g3
+g4 -> g4
+h3 -> h3
+h4 -> h4
+10      8       9       11      12      9       8       10
+7       7       7       7       7       7       7       7
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+0       0       0       0       0       0       0       0
+1       1       1       1       1       1       1       1
+4       2       3       5       6       3       2       4
+```
+
+It appears to be working as intended.
+
+### Final Tests
+
+I now wanted to 
