@@ -2366,3 +2366,256 @@ class Sprites:
             cv.images = []  # create if it doesn't exist
         cv.images.append(tk_sprite)
 ```
+
+The new script looked like it worked just fine. Unfortunately, I was running my code it in a *Github Codespace* - a remote device, meaning that I would not be able to display graphics on it.
+
+#### Temporary Text Representation
+
+Instead, I could improve the current function representing the text version of `Board` into something vaguely representing a Chess board. I first found some Unicode characters representing chess pieces and organised them into a dictionary converting piece IDs to Chess pieces:
+
+```py
+def __str__(self) -> str:
+    icon_list = ' ♙♘♗♖♕♔♟♞♝♜♛♚' # Notice the leading space; this is for empty squares.
+    icons: dict[int, str] = {i : piece for i, piece in enumerate(icon_list)}
+```
+
+There was a minor issue with the size of the chess pieces in text form. They did *not* have a consistent width and would skew the display of the board. I settled for simple letters instead:
+
+`icon_list = ' PNBRKQpnbrkq'`
+
+I then began work on the construction of the board. I first designed an example output I could reference for the starting position of the board:
+
+```bash
+   +---+---+---+---+---+---+---+---+
+8  | r | n | b | q | k | b | n | r |
+   +---+---+---+---+---+---+---+---+
+7  | p | p | p | p | p | p | p | p |
+   +---+---+---+---+---+---+---+---+
+6  |   |   |   |   |   |   |   |   |
+   +---+---+---+---+---+---+---+---+
+5  |   |   |   |   |   |   |   |   |
+   +---+---+---+---+---+---+---+---+
+4  |   |   |   |   |   |   |   |   |
+   +---+---+---+---+---+---+---+---+
+3  |   |   |   |   |   |   |   |   |
+   +---+---+---+---+---+---+---+---+
+2  | P | P | P | P | P | P | P | P |
+   +---+---+---+---+---+---+---+---+
+1  | R | N | B | Q | K | B | N | R |
+   +---+---+---+---+---+---+---+---+
+     a   b   c   d   e   f   g   h
+```
+
+The below script I wrote looked promising:
+
+```py
+def __str__(self) -> str:
+    icon_list = ' PNBRKQpnbrkq'
+    icons: dict[int, str] = {i : piece for i, piece in enumerate(icon_list)}
+
+    s = ''
+    rank_divider = '   ' + '+---' * 8 + '+\n'
+
+    for y in range(7, -1, -1):
+        rank = f"{y + 1} "
+
+        for x in range(8):
+            cell = self.board[x, y]
+            rank += f'| {icons[int(cell)]} '
+
+        s += rank_divider + rank + '|\n'
+    
+    s += rank_divider
+    s += '   ' + ' '.join(f' {chr(i + 96)} ' for i in range(8))
+    return s + '\n\n'
+```
+
+To test it, I initialised the default board instace then printed it.
+
+The result:
+
+```bash
+   +---+---+---+---+---+---+---+---+
+8 | R | P |   |   |   |   | p | r |
+   +---+---+---+---+---+---+---+---+
+7 | N | P |   |   |   |   | p | n |
+   +---+---+---+---+---+---+---+---+
+6 | B | P |   |   |   |   | p | b |
+   +---+---+---+---+---+---+---+---+
+5 | Q | P |   |   |   |   | p | q |
+   +---+---+---+---+---+---+---+---+
+4 | K | P |   |   |   |   | p | k |
+   +---+---+---+---+---+---+---+---+
+3 | B | P |   |   |   |   | p | b |
+   +---+---+---+---+---+---+---+---+
+2 | N | P |   |   |   |   | p | n |
+   +---+---+---+---+---+---+---+---+
+1 | R | P |   |   |   |   | p | r |
+   +---+---+---+---+---+---+---+---+
+    `   a   b   c   d   e   f   g 
+```
+
+Some minor issues:
+
+* The spacing is skewed
+* The board appears to be rotated
+* The file indicators are one ordinal too low
+
+The new function:
+
+```py
+def __str__(self) -> str:
+    icon_list = ' PNBRKQpnbrkq'
+    icons: dict[int, str] = {i : piece for i, piece in enumerate(icon_list)}
+
+    s = ''
+    rank_divider = '  ' + '+---' * 8 + '+\n' # spacing error: removed a space from the start
+
+    for y in range(7, -1, -1):
+        rank = f"{y + 1} "
+
+        for x in range(8):
+            cell = self.board[y, x] # rotating error: [y, x] instead of [x, y]
+            rank += f'| {icons[int(cell)]} '
+
+        s += rank_divider + rank + '|\n'
+    
+    s += rank_divider
+    s += '   ' + ' '.join(f' {chr(i + 97)} ' for i in range(8)) # file error: 97 instead of 96
+    return s + '\n\n'
+```
+
+The result:
+
+```bash
+  +---+---+---+---+---+---+---+---+
+8 | r | n | b | k | q | b | n | r |
+  +---+---+---+---+---+---+---+---+
+7 | p | p | p | p | p | p | p | p |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 | P | P | P | P | P | P | P | P |
+  +---+---+---+---+---+---+---+---+
+1 | R | N | B | K | Q | B | N | R |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+```
+
+It seems that the king letter accidentally represents the queen, and vice versa. All I had to do was change the icon list to the following:
+
+`icon_list = ' PNBRQKpnbrqk'`
+
+The result:
+
+```bash
+  +---+---+---+---+---+---+---+---+
+8 | r | n | b | q | k | b | n | r |
+  +---+---+---+---+---+---+---+---+
+7 | p | p | p | p | p | p | p | p |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 | P | P | P | P | P | P | P | P |
+  +---+---+---+---+---+---+---+---+
+1 | R | N | B | Q | K | B | N | R |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+```
+
+This has now printed **correctly**, and will work as a temporary substitution for graphics.
+
+### Final Tests
+
+Lastly, I wanted to set up two 'computers' who played random moves until one ran out of legal moves. I began devising a script:
+
+```py
+def random_game() -> None:
+    """Continually play random moves until one computer runs out of legal moves."""
+
+    board = Board().default()
+
+    while True:
+        legals = board.legal_moves()
+
+        # for [(x1, y1), (x2, y2)] in legals:
+        #     print(f'{chr(x1 + 97)}{y1+1} -> {chr(x2 + 97)}{y2+1}',end='\t')
+
+        random_move = rn.choice(list(legals))
+        [(x1, y1), (x2, y2)] = random_move
+        print(x1,y1,'to',x2,y2)
+
+        board = board.move(x1, y1, x2, y2)
+
+        board = board.swap_turn()
+
+        print(board)
+        input()
+```
+
+After running the script, it seemed as if only white pieces were moving. I looked into `board.swap_turn` and added some print statements to test.
+
+```py
+def swap_turn(self) -> 'Board':
+    """Swap the turn of the board."""
+    swapped_turn = self.other_player[self.turn.color]
+    print('current turn:',self.turn.color)
+    print('new turn:',swapped_turn.color)
+    return Board(swapped_turn, self.board)
+```
+
+Output:
+
+```bash
+current turn: black
+new turn: white
+current turn: black
+...
+current turn: black
+new turn: white
+current turn: black
+new turn: white
+3 1 to 3 3
+current turn: black
+new turn: white
+  +---+---+---+---+---+---+---+---+
+8 | r | n | b | q | k | b | n | r |
+  +---+---+---+---+---+---+---+---+
+7 | p | p | p | p | p | p | p | p |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   | P |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 | P | P | P | P |   | P | P | P |
+  +---+---+---+---+---+---+---+---+
+1 | R | N | B | Q | K | B | N | R |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+```
+
+Strangely enough, the turn already seemed to be black, and is getting swapped back to white frequently. I searched for where the function was being used.
+
+It was only used in `isking_vulnerable` to swap the turn to obtain the other player's legal moves.
+
+I then realised I was accidentally swapping the turn in the move function as well. I removed the culprit line.
+
+There were some minor issues with check logic that I realised during testing. However, the program was running *incredibly* slowly, so I spent some time optimising.
+
+### Optimisation

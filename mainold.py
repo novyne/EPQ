@@ -453,29 +453,29 @@ class Board:
 
         # are there legal moves?
         if not self.legal_moves(player):
-            print("No legal moves found.",bc='^')
+            print("No legal moves found.")
             return True
         
         # insufficient material
         if any(token in self.tokens_on_board for token in [1,4,5,7,10,11]): # major pieces and pawns
-            print("Major pieces and pawns found.",bc='^')
+            print("Major pieces and pawns found.")
             return False
         
         if all(token in self.tokens_on_board for token in [2,3]): # black knight and bishop
-            print("Black knight and bishop found.",bc='^')
+            print("Black knight and bishop found.")
             return False
         if all(token in self.tokens_on_board for token in [8,9]): # white knight and bishop
-            print("White knight and bishop found.",bc='^')
+            print("White knight and bishop found.")
             return False
         
         if any(self.tokens_on_board.count(token) > 1 for token in [2,3]): # white knight and bishop
-            print("At least 2 white knights or bishops found.",bc='^')
+            print("At least 2 white knights or bishops found.")
             return False
         if any(self.tokens_on_board.count(token) > 1 for token in [8,9]): # black knight and bishop
-            print("At least 2 black knights or bishops found.",bc='^')
+            print("At least 2 black knights or bishops found.")
             return False
         
-        print("Insufficient material.",bc='^')
+        print("Insufficient material.")
         return True
 
 
@@ -638,11 +638,13 @@ def play(board: Board, app: App, player: int) -> None:
     board.board = board.move(board.board, random_move[0], random_move[1], random_move[2])
     board.force_update_tokens_on_board()
 
-    app.load_board(board)
+    # app.load_board(board)
+    print(board)
     print(f"Player {player} played {board.move_to_SAN(*random_move)}.")
     # input()
     
-    app.after(1, play, board, app, 1 - player)
+    # app.after(1, play, board, app, 1 - player)
+    play(board, app, 1 - player)
 
 
 ###################################################################################################
@@ -651,12 +653,12 @@ def play(board: Board, app: App, player: int) -> None:
 def main() -> None:
     """The main program."""
 
-    app = App()
+    # app = App()
     board = Board()
 
-    play(board, app, 1)
+    play(board, None, 1)
 
-    app.mainloop()
+    # app.mainloop()
 
 if __name__ == '__main__':
     main()

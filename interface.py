@@ -1,3 +1,9 @@
+"""
+Interface Module
+================
+Separate module for handling graphics in the program.
+"""
+
 import os
 import tkinter as tk
 

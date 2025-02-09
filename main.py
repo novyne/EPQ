@@ -9,8 +9,7 @@ from interface import App
 
 try:
     # installed modules
-    import tkinter as tk
-    from PIL import Image, ImageTk
+    pass
 
 except ModuleNotFoundError:
     print("Installing required modules from requirements.txt (sibling file). Please wait...")
@@ -196,6 +195,7 @@ class Board:
         # board is an array of piece IDs
         self.write_bitboards_from_board()
         
+        # join IDS to pieces
         self.id: dict[int, Piece | Pawn] = {}
         for piece in self.pieces:
             self.id[piece.id] = piece
@@ -203,19 +203,31 @@ class Board:
         self.last_piece_taken: None | Piece | Pawn = None
         self.last_piece_moved: None | Piece | Pawn = None
         self.last_move: None | tuple[Coordinate, Coordinate] = None
-        
+
         self.self_pieces = self.white.pieces if self.turn.color == 'white' else self.black.pieces
         self.other_pieces = self.black.pieces if self.turn.color == 'white' else self.white.pieces
 
         self.update_piece_bitboard_data()
 
     def __str__(self) -> str:
+        icon_list = ' PNBRQKpnbrqk'
+        icons: dict[int, str] = {i : piece for i, piece in enumerate(icon_list)}
+
         s = ''
-        for x in range(7, -1, -1):
-            for y in self.board[x]:
-                s += str(y) + '\t'
-            s += '\n'
-        return s
+        rank_divider = '  ' + '+---' * 8 + '+\n'
+
+        for y in range(7, -1, -1):
+            rank = f"{y + 1} "
+
+            for x in range(8):
+                cell = self.board[y, x]
+                rank += f'| {icons[int(cell)]} '
+
+            s += rank_divider + rank + '|\n'
+        
+        s += rank_divider
+        s += '   ' + ' '.join(f' {chr(i + 97)} ' for i in range(8))
+        return s + '\n\n'
 
     def copy(self) -> 'Board':
         """Return a duplicate Board instance."""
@@ -224,7 +236,7 @@ class Board:
     def swap_turn(self) -> 'Board':
         """Swap the turn of the board."""
         swapped_turn = self.other_player[self.turn.color]
-        return Board(swapped_turn, self.board) 
+        return Board(swapped_turn, self.board)
 
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
@@ -290,8 +302,10 @@ class Board:
     def move(self, x1: int, y1: int, x2: int, y2: int) -> 'Board':
         """Move a piece at (x1, y1) to (x2, y2).
         Args:
-            x1, y1: The coordinates of the start.
-            x2: y2: The coordinates of the end.
+            x1: The starting X coordinate.
+            y1: The starting Y coordinate.
+            x2: The destination X coordinate.
+            y2: The destination Y coordinate.
         Returns:
             Board: The new board state.
         """
@@ -322,9 +336,6 @@ class Board:
         new.last_piece_moved = start_piece
         new.last_move = (x1, y1), (x2, y2)
 
-        # switch turn
-        new.turn = new.other_player[new.turn.color]
-
         # update crucial bitboard data
         new.update_piece_bitboard_data()
 
@@ -345,13 +356,15 @@ class Board:
 
     def present_pieces(self) -> list[Piece | Pawn]:
         """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
-        return [piece for piece in self.pieces if piece.bb.any()]
+        return [piece for piece in self.pieces if piece.bb.any() and piece.id != 0]
 
     def get_pawn_movement(self, x: int, y: int) -> list[list[Coordinate, Coordinate]]:
         """Obtain the possible movement of a pawn based on its position and colour.
         Args:
             x (int): The X coordinate of the pawn.
             y (int): The Y coordinate of the pawn.
+        Returns:
+            list(list[Coordinate, Coordinate]): The list of coordinates denoting where the pawn is allowed to move.
         """
 
         movement: list[list[Coordinate, Coordinate]] = []
@@ -387,7 +400,7 @@ class Board:
         Args:
             piece (Piece): The piece to check for legal moves.
         Returns:
-            Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement.
+            Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
         """
 
         for x, y in piece.bb.pos():
@@ -429,7 +442,7 @@ class Board:
     def legal_nocheck(self) -> Iterable[list[Coordinate, Coordinate]]:
         """Get all legal moves without checking for checks.
         Returns:
-            Iterable[list[Coordinate, Coordinate]]: An iterable of pairs of coordinates describing the movement.
+            Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
         """
 
         moveable_pieces = list(set(self.present_pieces()) & set(self.self_pieces))
@@ -446,7 +459,7 @@ class Board:
     def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
         """Find all legal moves on the board.
         Returns:
-            Iterable[list[Coordinate, Coordinate]]: The legal moves in pairs of coordinates.
+            Iterable(list[Coordinate, Coordinate]): The legal moves in pairs of coordinates.
         """
 
         legals_nocheck = self.legal_nocheck()
@@ -454,7 +467,7 @@ class Board:
         for [(x1, y1), (x2, y2)] in legals_nocheck:
             board = self.move(x1, y1, x2, y2)
             if not board.isking_vulnerable():
-                yield [(x1, y2), (x2, y2)]
+                yield [(x1, y1), (x2, y2)]
             board.undo()
 
     def isking_vulnerable(self) -> bool:
@@ -478,10 +491,31 @@ class Board:
             board.undo()
         return False
 
+
 ###################################################################################################
 
 
+def random_game() -> None:
+    """Continually play random moves until one computer runs out of legal moves."""
 
+    board = Board().default()
+
+    while True:
+        legals = list(board.legal_moves())
+
+        if not legals:
+            print(f"No legal moves left for {board.turn.color}. Game over!")
+            break
+
+        random_move = rn.choice(legals)
+        [(x1, y1), (x2, y2)] = random_move
+        print(f"{board.turn.color} moves: {chr(x1 + 97)}{y1+1} -> {chr(x2 + 97)}{y2+1}")
+
+        board = board.move(x1, y1, x2, y2)
+        board = board.swap_turn()
+
+        print(board)
+        # input()
 
 
 ###################################################################################################
@@ -490,10 +524,10 @@ class Board:
 def main() -> None:
     """The main program."""
 
-    board = Board().default()
+    random_game()
     
-    app = App()
-    app.mainloop()
+    # app = App()
+    # app.mainloop()
 
 if __name__ == '__main__':
     main()
