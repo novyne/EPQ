@@ -2619,3 +2619,514 @@ I then realised I was accidentally swapping the turn in the move function as wel
 There were some minor issues with check logic that I realised during testing. However, the program was running *incredibly* slowly, so I spent some time optimising.
 
 ### Optimisation
+
+In order to profile the speed of my code, I imported `cProfile` and used it to profile the speed of each function.
+
+```py
+cProfile.run('main()', sort='cumulative')
+```
+
+Here is the first few outputs for the most time-consuming functions:
+
+```bash
+36001561 function calls in 19.033 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000   19.032   19.032 {built-in method builtins.exec}
+        1    0.000    0.000   19.032   19.032 <string>:1(<module>)
+        1    0.000    0.000   19.032   19.032 main.py:525(main)
+        1    0.001    0.001   19.032   19.032 main.py:499(random_game)
+      693    0.023    0.000   19.024    0.027 main.py:460(legal_moves)
+      715    0.593    0.001   18.777    0.026 main.py:474(isking_vulnerable)
+    57645    0.185    0.000   17.364    0.000 main.py:303(move)
+    58372    0.304    0.000   13.770    0.000 main.py:173(__init__)
+    57645    0.043    0.000   13.641    0.000 main.py:233(copy)
+   116744    0.493    0.000    7.480    0.000 main.py:148(__init__)
+   116017    0.720    0.000    7.151    0.000 main.py:253(update_piece_bitboard_data)
+   758836    0.642    0.000    7.120    0.000 main.py:85(__init__)
+```
+
+Notice how often some functions are being called. `Board.__init__` consumes a lot of time per call, and is also being called very frequently.
+
+I first optimised `Piece.expand_movement` by precomputing piece movement in a dictionary.
+
+The new `Piece` class:
+
+```py
+class Piece:
+
+    # UPDATE: precomputed directions
+    MOVEMENT_DIRECTIONS = {
+        'knight': [(2, 1), (1, 2), (-2, 1), (-1, 2), (2, -1), (1, -2), (-2, -1), (-1, -2)],
+        'bishop': [(1, 1), (-1, 1), (1, -1), (-1, -1)],
+        'rook': [(1, 0), (-1, 0), (0, 1), (0, -1)],
+        'queen': [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)],
+        'king': [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)]
+    }
+
+    def __init__(self, color: Literal['white', 'black'], movement: list[tuple[int, int]], movelong: bool) -> None:
+        """Chess piece class.
+        Args:
+            color (Literal['white', 'black']): The color of the piece.
+            movement (list[tuple[int, int]]): The short-hand movement of the piece.
+            movelong (bool): Whether the piece can move 'long' or not.
+        """
+
+        global PIECE_ID_INDEX
+        self.id = PIECE_ID_INDEX + 1
+        PIECE_ID_INDEX += 1
+
+        self.color = color
+        self.movelong = movelong
+        self.movement = self.MOVEMENT_DIRECTIONS.get(self.__class__.__name__.lower(), movement) # UPDATE: movement accessed by a dictionary
+        self.bb = Bitboard()
+
+    def __str__(self) -> str:
+        return f"{self.color} piece ID {self.id}"
+
+    def copy(self, color: Literal['white', 'black'] = None, movement: list[tuple[int, int]] = None, movelong: bool = None) -> 'Piece':
+        """Create a copy of the piece, with optional overrides."""
+
+        return Piece(
+            self.color if color is None else color,
+            self.movement if movement is None else movement,
+            self.movelong if movelong is None else movelong
+        )
+```
+
+There were a few more minor optimisations I could include. They are below:
+
+### `Bitboard.sum`
+
+Old:
+
+```py
+def sum(self, other) -> 'Bitboard':
+        summed = Bitboard(self.bb)
+        for bb in other:
+            summed += bb
+        return summed
+```
+
+New:
+
+```py
+def sum(self, other) -> 'Bitboard':
+    summed = Bitboard(np.sum([bb.bb for bb in other], axis=0))
+    return summed
+```
+
+### `Bitboard.pos`
+
+Old:
+
+```py
+def pos(self) -> list[Coordinate]:
+    """Return the indices of any 1s in the bitboard.
+    Returns:
+        list[Coordinate]: The list of indices pointing to 1s.
+    """
+
+    pos = np.nonzero(self.bb)
+    return list(zip(pos[1], pos[0]))
+```
+
+New:
+
+```py
+def pos(self) -> list[Coordinate]:
+    return [tuple(coord) for coord in np.argwhere(self.bb)]
+```
+
+I also realised that creating a new `Board` class was immensely costly. I reverted this change.
+
+New `Board.move`:
+
+```py
+def move(self, x1: int, y1: int, x2: int, y2: int) -> None:
+    """Move a piece at (x1, y1) to (x2, y2).
+    Args:
+        x1: The starting X coordinate.
+        y1: The starting Y coordinate.
+        x2: The destination X coordinate.
+        y2: The destination Y coordinate.
+    """
+
+    # swap coordinates due to strange access error
+    x1, y1 = y1, x1
+    x2, y2 = y2, x2
+
+    start_id = self.board[x1, y1]
+    start_piece = self.id[start_id]
+    end_id = self.board[x2, y2]
+    end_piece = self.id[end_id]
+
+    # on start bb: set to 0 at start and set to 1 at end
+    start_piece.bb[x1, y1] = 0
+    start_piece.bb[x2, y2] = 1
+    # on end bb: set to 0 at end
+    end_piece.bb[x2, y2] = 0
+
+    # update board
+    self.board[x1, y1] = 0
+    self.board[x2, y2] = start_id
+
+    # update last move data
+    self.last_piece_taken = end_piece
+    self.last_piece_moved = start_piece
+    self.last_move = (x1, y1), (x2, y2)
+
+    # update crucial bitboard data
+    self.update_piece_bitboard_data()
+```
+
+I would then have to change each `Board.move` instance in `legal_moves`, `isking_vulnerable` and `random_game`.
+
+```py
+def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
+    """Find all legal moves on the board.
+    Returns:
+        Iterable(list[Coordinate, Coordinate]): The legal moves in pairs of coordinates.
+    """
+
+    legals_nocheck = self.legal_nocheck()
+
+    for [(x1, y1), (x2, y2)] in legals_nocheck:
+        self.move(x1, y1, x2, y2)
+        if not self.isking_vulnerable():
+            yield [(x1, y1), (x2, y2)]
+        board.undo()
+
+def isking_vulnerable(self) -> bool:
+    """Return whether the turn player's king can be taken.
+    Returns:
+        bool: True if the king can be taken, otherwise False.
+    """
+
+    # obtain the legal moves for the other player
+    other_board = self.swap_turn()
+    other_legals_nocheck = other_board.legal_nocheck()
+
+    for [(x1, y1), (x2, y2)] in other_legals_nocheck:
+        other_board.move(x1, y1, x2, y2)
+        king = self.other_player[self.turn.color].king # obtain the CURRENT player's king
+        
+        # if the king is not present, return True
+        if not king.bb.any():
+            return True
+        
+        self.undo()
+    return False
+
+...
+
+def random_game() -> None:
+    """Continually play random moves until one computer runs out of legal moves."""
+
+    board = Board().default()
+
+    while True:
+        legals = list(board.legal_moves())
+
+        if not legals:
+            print(f"No legal moves left for {board.turn.color}. Game over!")
+            break
+
+        random_move = rn.choice(legals)
+        [(x1, y1), (x2, y2)] = random_move
+        print(f"{board.turn.color} moves: {chr(x1 + 97)}{y1+1} -> {chr(x2 + 97)}{y2+1}")
+
+        board.move(x1, y1, x2, y2)
+        board = board.swap_turn()
+
+        print(board)
+        # input()
+```
+
+### Recorrection
+
+This error occurred after trying the script again:
+
+```bash
+Traceback (most recent call last):
+  File "/workspaces/EPQ/main.py", line 528, in <module>
+    cProfile.run('main()',sort='cumulative')
+  File "/usr/local/python/3.12.1/lib/python3.12/cProfile.py", line 18, in run
+    return _pyprofile._Utils(Profile).run(statement, filename, sort)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/profile.py", line 55, in run
+    prof.run(statement)
+  File "/usr/local/python/3.12.1/lib/python3.12/cProfile.py", line 97, in run
+    return self.runctx(cmd, dict, dict)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/cProfile.py", line 102, in runctx
+    exec(cmd, globals, locals)
+  File "<string>", line 1, in <module>
+  File "/workspaces/EPQ/main.py", line 522, in main
+    random_game()
+  File "/workspaces/EPQ/main.py", line 499, in random_game
+    legals = list(board.legal_moves())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/EPQ/main.py", line 463, in legal_moves
+    self.move(x1, y1, x2, y2)
+  File "/workspaces/EPQ/main.py", line 318, in move
+    end_id = self.board[x2, y2]
+             ~~~~~~~~~~^^^^^^^^
+IndexError: index 8 is out of bounds for axis 0 with size 8
+```
+
+For some reason, the game was trying to access a piece off the board. The reason is that the new position access system still needs to reverse the coordinates. I solved this by swapping the coordinates passed to `Board.get_pawn_movement`.
+
+However, the coordinate reversal problem was still causing errors everywhere else. I decided to instead edit the `pos` function directly.
+
+```py
+def pos(self) -> list[Coordinate]:
+        return [(y, x) for x, y in np.argwhere(self.bb)]
+```
+
+Now everything seemed to be working correctly after correcting the coordinates passed into the functions.
+
+However, there was an error with king safety and checks. If a king was in check, no legal moves would be found. Additionally, knights wouldn't move.
+
+I decided to run a test, where all pieces were removed except kings and knights. I replaced `Board.default()` in `random_game` with a `Board` instance holding the below array:
+
+```bash
+[[0, 8, 0, 0, 12, 0, 8, 0],
+ [0] * 8,
+ [0] * 8,
+ [0] * 8,
+ [0] * 8,
+ [0] * 8,
+ [0] * 8,
+ [0, 2, 0, 0, 6, 0, 2, 0]]
+```
+
+```py
+"""In random_game:"""
+
+custom_board = [[0, 8, 0, 0, 12, 0, 8, 0],
+                [0] * 8,
+                [0] * 8,
+                [0] * 8,
+                [0] * 8,
+                [0] * 8,
+                [0] * 8,
+                [0, 2, 0, 0, 6, 0, 2, 0]
+                ][::-1]
+
+# board = Board().default()
+board = Board(board=np.array(custom_board))
+...
+```
+
+This was the output:
+
+```bash
+white moves: e1 -> f2
+  +---+---+---+---+---+---+---+---+
+8 |   | n |   |   | k |   | n |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   |   |   | K |   |   |
+  +---+---+---+---+---+---+---+---+
+1 |   | N |   |   |   |   | N |   |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+
+
+ 
+black moves: e8 -> f8
+  +---+---+---+---+---+---+---+---+
+8 |   | n |   |   |   | k | n |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   |   |   | K |   |   |
+  +---+---+---+---+---+---+---+---+
+1 |   | N |   |   |   |   | N |   |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+
+
+
+white moves: b1 -> d2
+  +---+---+---+---+---+---+---+---+
+8 |   | n |   |   |   | k | n |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   | N |   | K |   |   |
+  +---+---+---+---+---+---+---+---+
+1 |   |   |   |   |   |   | N |   |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+
+
+
+No legal moves left for black. Game over!
+         7783 function calls in 6.811 seconds
+
+   Ordered by: cumulative time
+   ...
+```
+
+Suddenly, black hasn't found a single legal move.
+
+I decided to print each move the pieces were considered and whether it was disregarded due to the king being in 'danger'.
+
+Output:
+
+```bash
+moved 4 0 to 5 0
+king not vulnerable, yielding 4 0 to 5 0
+moved 4 0 to 5 1
+king not vulnerable, yielding 4 0 to 5 1
+moved 1 0 to 3 1
+king not vulnerable, yielding 1 0 to 3 1
+white moves: e1 -> f2
+  +---+---+---+---+---+---+---+---+
+8 |   | n |   |   | k |   | n |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   |   |   | K |   |   |
+  +---+---+---+---+---+---+---+---+
+1 |   | N |   |   |   |   | N |   |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+
+
+
+moved 4 7 to 5 7
+king not vulnerable, yielding 4 7 to 5 7
+black moves: e8 -> f8
+  +---+---+---+---+---+---+---+---+
+8 |   | n |   |   |   | k | n |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   |   |   | K |   |   |
+  +---+---+---+---+---+---+---+---+
+1 |   | N |   |   |   |   | N |   |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+
+
+
+moved 1 0 to 3 1
+king not vulnerable, yielding 1 0 to 3 1
+moved 5 1 to 6 1
+king not vulnerable, yielding 5 1 to 6 1
+moved 5 1 to 6 2
+king not vulnerable, yielding 5 1 to 6 2
+white moves: f2 -> g2
+  +---+---+---+---+---+---+---+---+
+8 |   | n |   |   |   | k | n |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   |   |   |   | K |   |
+  +---+---+---+---+---+---+---+---+
+1 |   | N |   |   |   |   | N |   |
+  +---+---+---+---+---+---+---+---+
+    a   b   c   d   e   f   g   h 
+
+
+
+No legal moves left for black. Game over!
+         7800 function calls in 32.411 seconds
+
+   Ordered by: cumulative time
+```
+
+Strangely enough, not *all* the legal moves were being found. I backtracked, printing out each move considered by `piece_legal_nocheck`. I also ensured to convert the yields to a list so they calculated immediately.
+
+The output made me realise that the piece's movement was not complete. I consulted the dictionary of piece movements.
+
+```py
+"""In Piece.__init__:"""
+self.movement = self.MOVEMENT_DIRECTIONS.get(self.__class__.__name__.lower(), movement)
+```
+
+Notice how the movement is defaulted to the short-hand movement I passed in, which I forgot to change. I changed the parameter to hold the piece name instead.
+
+```py
+class Player:
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+        """Player class to manage pieces for a given colour.
+        Args:
+            color (Literal['white', 'black']): The colour of the piece.
+        """
+
+        self.color: Literal['white','black'] = color
+
+        self.pawn = Pawn(color=color)
+        self.knight = Piece(color=color, name='knight', movelong=False)
+        self.bishop = Piece(color=color, name='bishop', movelong=True)
+        self.rook = Piece(color=color, name='rook', movelong=True)
+        self.queen = Piece(color=color, name='queen', movelong=True)
+        self.king = Piece(color=color, name='king', movelong=False)
+
+        ...
+
+class Pawn(Piece):
+
+    def __init__(self, color: Literal['white', 'black']) -> None:
+        super().__init__(color, 'pawn', False)
+
+        ...
+```
+
+After some tests, the pieces were moving correctly. The final tests would be to ensure the king can handle danger correctly.

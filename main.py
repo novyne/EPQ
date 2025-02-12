@@ -1,4 +1,5 @@
 # default modules
+import cProfile
 import numpy as np
 import os
 import random as rn
@@ -54,9 +55,7 @@ class Bitboard:
         return str(self.bb)
     
     def sum(self, other) -> 'Bitboard':
-        summed = Bitboard(self.bb)
-        for bb in other:
-            summed += bb
+        summed = Bitboard(np.sum([bb.bb for bb in other], axis=0))
         return summed
 
     def any(self) -> bool:
@@ -64,13 +63,7 @@ class Bitboard:
         return np.any(self.bb)
     
     def pos(self) -> list[Coordinate]:
-        """Return the indices of any 1s in the bitboard.
-        Returns:
-            list[Coordinate]: The list of indices pointing to 1s.
-        """
-
-        pos = np.nonzero(self.bb)
-        return list(zip(pos[1], pos[0]))
+        return [(y, x) for x, y in np.argwhere(self.bb)]
 
 
 ###################################################################################################
@@ -81,11 +74,19 @@ PIECE_ID_INDEX = -1
 
 class Piece:
 
-    def __init__(self, color: Literal['white', 'black'], movement: list[tuple[int, int]], movelong: bool) -> None:
+    MOVEMENT_DIRECTIONS = {
+        'knight': [(2, 1), (1, 2), (-2, 1), (-1, 2), (2, -1), (1, -2), (-2, -1), (-1, -2)],
+        'bishop': [(1, 1), (-1, 1), (1, -1), (-1, -1)],
+        'rook': [(1, 0), (-1, 0), (0, 1), (0, -1)],
+        'queen': [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)],
+        'king': [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)]
+    }
+
+    def __init__(self, color: Literal['white', 'black'], name: str, movelong: bool) -> None:
         """Chess piece class.
         Args:
             color (Literal['white', 'black']): The color of the piece.
-            movement (list[tuple[int, int]]): The short-hand movement of the piece.
+            name (str): The name of the piece.
             movelong (bool): Whether the piece can move 'long' or not.
         """
 
@@ -95,44 +96,44 @@ class Piece:
 
         self.color = color
         self.movelong = movelong
-        self.movement = self.expand_movement(movement)
+        self.movement = self.MOVEMENT_DIRECTIONS.get(name)
         self.bb = Bitboard()
 
     def __str__(self) -> str:
-        return f"{self.color} piece ID {self.id}"
+        return f"{self.color} {self.name} ID {self.id}"
 
-    def expand_movement(self, short_movement: list[tuple[int, int]]) -> list[tuple[int, int]]:
-        """Expand the short movement list for all cases of movement.
-        Args:
-            short_movement (list[Coordinate]): The short-movement list.
-        Returns:
-            list[Coordinate]: The expanded movement list.
-        """
+    # def expand_movement(self, short_movement: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    #     """Expand the short movement list for all cases of movement.
+    #     Args:
+    #         short_movement (list[Coordinate]): The short-movement list.
+    #     Returns:
+    #         list[Coordinate]: The expanded movement list.
+    #     """
 
-        mvmt = []
-        for dx, dy in short_movement:
-            for _ in range(2):
-                mvmt.append((dx, dy))
-                mvmt.append((dx, -dy))
-                mvmt.append((-dx, dy))
-                mvmt.append((-dx, -dy))
-                dy, dx = dx, dy
+    #     mvmt = []
+    #     for dx, dy in short_movement:
+    #         for _ in range(2):
+    #             mvmt.append((dx, dy))
+    #             mvmt.append((dx, -dy))
+    #             mvmt.append((-dx, dy))
+    #             mvmt.append((-dx, -dy))
+    #             dy, dx = dx, dy
 
-        return mvmt
+    #     return mvmt
 
-    def copy(self, color: Literal['white', 'black'] = None, movement: list[tuple[int, int]] = None, movelong: bool = None) -> 'Piece':
+    def copy(self, color: Literal['white', 'black'] = None, name: str | None = None, movelong: bool = None) -> 'Piece':
         """Create a copy of the piece, with optional overrides."""
 
         return Piece(
             self.color if color is None else color,
-            self.movement if movement is None else movement,
+            self.name if name is None else name,
             self.movelong if movelong is None else movelong
         )
     
 class Pawn(Piece):
 
     def __init__(self, color: Literal['white', 'black']) -> None:
-        super().__init__(color, [], False)
+        super().__init__(color, 'pawn', False)
     
     def copy(self, color: Literal['white', 'black'] = None) -> 'Pawn':
         """Create a copy of the pawn, with optional overrides."""
@@ -153,11 +154,11 @@ class Player:
         self.color: Literal['white','black'] = color
 
         self.pawn = Pawn(color=color)
-        self.knight = Piece(color=color, movement=[(2, 1)], movelong=False)
-        self.bishop = Piece(color=color, movement=[(1, 1)], movelong=True)
-        self.rook = Piece(color=color, movement=[(1, 0)], movelong=True)
-        self.queen = Piece(color=color, movement=[(1, 0), (1, 1)], movelong=True)
-        self.king = self.queen.copy(color=color, movelong=False)
+        self.knight = Piece(color=color, name='knight', movelong=False)
+        self.bishop = Piece(color=color, name='bishop', movelong=True)
+        self.rook = Piece(color=color, name='rook', movelong=True)
+        self.queen = Piece(color=color, name='queen', movelong=True)
+        self.king = Piece(color=color, name='king', movelong=False)
 
         self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
 
@@ -179,7 +180,7 @@ class Board:
         global PIECE_ID_INDEX
         PIECE_ID_INDEX = -1
 
-        self.empty_piece = Piece(None, [(0,0)], False)
+        self.empty_piece = Piece(None, 'empty', False)
         self.white = Player('white')
         self.black = Player('black')
         self.other_player = {
@@ -452,8 +453,9 @@ class Board:
                 for x, y in piece.bb.pos():
                     for move in self.get_pawn_movement(x, y):
                         yield move
+                pass
             elif isinstance(piece, Piece):
-                for move in self.piece_legal_nocheck(piece):
+                for move in list(self.piece_legal_nocheck(piece)):
                     yield move
 
     def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
@@ -462,7 +464,8 @@ class Board:
             Iterable(list[Coordinate, Coordinate]): The legal moves in pairs of coordinates.
         """
 
-        legals_nocheck = self.legal_nocheck()
+        # legals_nocheck = self.legal_nocheck()
+        legals_nocheck = list(self.legal_nocheck())
 
         for [(x1, y1), (x2, y2)] in legals_nocheck:
             board = self.move(x1, y1, x2, y2)
@@ -498,7 +501,18 @@ class Board:
 def random_game() -> None:
     """Continually play random moves until one computer runs out of legal moves."""
 
+    custom_board = [[0, 8, 0, 0, 12, 0, 8, 0],
+                    [0] * 8,
+                    [0] * 8,
+                    [0] * 8,
+                    [0] * 8,
+                    [0] * 8,
+                    [0] * 8,
+                    [0, 2, 0, 0, 6, 0, 2, 0]
+                    ][::-1]
+
     board = Board().default()
+    # board = Board(board=np.array(custom_board))
 
     while True:
         legals = list(board.legal_moves())
@@ -515,7 +529,7 @@ def random_game() -> None:
         board = board.swap_turn()
 
         print(board)
-        # input()
+        input()
 
 
 ###################################################################################################
@@ -530,4 +544,4 @@ def main() -> None:
     # app.mainloop()
 
 if __name__ == '__main__':
-    main()
+    cProfile.run('main()',sort='cumulative')
