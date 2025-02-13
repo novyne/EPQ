@@ -3130,3 +3130,90 @@ class Pawn(Piece):
 ```
 
 After some tests, the pieces were moving correctly. The final tests would be to ensure the king can handle danger correctly.
+
+I reintroduced the default board, and printed whenever a move was deemed illegal. For ease, I also created a function that formatted a coordiante into proper Chess coordinates:
+
+```py
+def cformat(x: int, y: int) -> str:
+    """Format coordinates into Chess coordinates."""
+    return f'{chr(x + 97)}{y + 1}'
+```
+
+Additionally, to endanger the kings further, I removed the pawns in a custom position.
+
+After the first move, the black queen appeared to be missing. This was resolved in `isking_vulnerable`: undoing the move taking the king before returning `True` caused the queen to reappear correctly.
+
+```py
+def isking_vulnerable(self) -> bool:
+    """Return whether the turn player's king can be taken.
+    Returns:
+        bool: True if the king can be taken, otherwise False.
+    """
+
+    # obtain the legal moves for the other player
+    other_board = self.swap_turn()
+    other_legals_nocheck = other_board.legal_nocheck()
+
+    for [(x1, y1), (x2, y2)] in other_legals_nocheck:
+        board = other_board.move(x1, y1, x2, y2)
+        king = board.other_player[board.turn.color].king # obtain the CURRENT player's king
+
+        # if the king is not present, return True
+        if not king.bb.any():
+            board.undo() # <- undo HERE
+            return True
+        
+        board.undo()
+    return False
+```
+
+Aside from that minor error, the legal move function worked without issues.
+
+I ran another time profile:
+
+```bash
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000   62.901   62.901 {built-in method builtins.exec}
+        1    0.000    0.000   62.901   62.901 <string>:1(<module>)
+        1    0.000    0.000   62.901   62.901 main.py:547(main)
+        1    0.011    0.011   62.901   62.901 main.py:511(random_game)
+     7254    0.104    0.000   62.701    0.009 main.py:470(legal_moves)
+     8156    1.029    0.000   60.425    0.007 main.py:485(isking_vulnerable)
+   220119    0.760    0.000   56.794    0.000 main.py:313(move)
+   448683    2.647    0.000   42.852    0.000 main.py:263(update_piece_bitboard_data)
+   228564    1.201    0.000   36.522    0.000 main.py:177(__init__)
+   220119    0.178    0.000   35.383    0.000 main.py:243(copy)
+  1372178   10.745    0.000   23.777    0.000 main.py:69(pos)
+  1346049    2.302    0.000   15.641    0.000 main.py:61(sum)
+  1346049    1.540    0.000   12.957    0.000 fromnumeric.py:2338(sum)
+  1372178    2.745    0.000   12.854    0.000 numeric.py:591(argwhere)
+  1346049    2.518    0.000   11.108    0.000 fromnumeric.py:69(_wrapreduction)
+  2744356    1.858    0.000    8.250    0.000 fromnumeric.py:51(_wrapfunc)
+  1667509    7.998    0.000    7.998    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+   457128    1.915    0.000    6.697    0.000 main.py:152(__init__)
+  1372178    0.570    0.000    6.216    0.000 fromnumeric.py:630(transpose)
+   228564    5.184    0.000    5.583    0.000 main.py:252(write_bitboards_from_board)
+  2971332    2.471    0.000    5.003    0.000 main.py:89(__init__)
+  1372178    2.853    0.000    4.303    0.000 fromnumeric.py:41(_wrapit)
+  5663430    1.491    0.000    3.310    0.000 main.py:37(__init__)
+  1372178    0.584    0.000    3.188    0.000 fromnumeric.py:2018(nonzero)
+   321460    0.319    0.000    1.879    0.000 main.py:65(any)
+  4317381    1.819    0.000    1.819    0.000 {built-in method numpy.zeros}
+  5462583    1.731    0.000    1.731    0.000 {built-in method builtins.getattr}
+   228276    0.188    0.000    1.658    0.000 main.py:452(legal_nocheck)
+  1372178    1.646    0.000    1.646    0.000 {method 'nonzero' of 'numpy.ndarray' objects}
+   321460    0.260    0.000    1.508    0.000 fromnumeric.py:2477(any)
+     8444    0.008    0.000    1.325    0.000 main.py:247(swap_turn)
+   321460    0.418    0.000    1.248    0.000 fromnumeric.py:89(_wrapreduction_any_all)
+   457128    0.332    0.000    1.238    0.000 main.py:139(__init__)
+   251161    0.546    0.000    0.903    0.000 main.py:408(piece_legal_nocheck)
+  3469786    0.787    0.000    0.787    0.000 main.py:48(__setitem__)
+   219831    0.359    0.000    0.559    0.000 main.py:355(undo)
+  2971332    0.554    0.000    0.554    0.000 {method 'get' of 'dict' objects}
+     8445    0.043    0.000    0.553    0.000 main.py:367(present_pieces)
+    
+...
+
+```
+
+I was particularly interest in the `__init__` functions, mainly due to the large number of classes I was creating.

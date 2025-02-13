@@ -24,6 +24,10 @@ except ModuleNotFoundError:
 
 Coordinate = NewType('Coordinate', tuple[int,int])
 
+def cformat(x: int, y: int) -> str:
+    """Format coordinates into Chess coordinates."""
+    return f'{chr(x + 97)}{y + 1}'
+
 
 ###################################################################################################
 
@@ -214,6 +218,10 @@ class Board:
         icon_list = ' PNBRQKpnbrqk'
         icons: dict[int, str] = {i : piece for i, piece in enumerate(icon_list)}
 
+        white_code = '\033[91m'
+        black_code = '\033[94m'
+        reset_code = '\033[0m'
+
         s = ''
         rank_divider = '  ' + '+---' * 8 + '+\n'
 
@@ -222,7 +230,9 @@ class Board:
 
             for x in range(8):
                 cell = self.board[y, x]
-                rank += f'| {icons[int(cell)]} '
+                icon = icons[int(cell)]
+                color = white_code if icon.isupper() else black_code
+                rank += f'| {color}{icon}{reset_code} '
 
             s += rank_divider + rank + '|\n'
         
@@ -343,8 +353,7 @@ class Board:
         return new
 
     def undo(self) -> None:
-        """Undo the previous move.
-        """
+        """Undo the previous move."""
 
         (x1, y1), (x2, y2) = self.last_move
     
@@ -486,9 +495,10 @@ class Board:
         for [(x1, y1), (x2, y2)] in other_legals_nocheck:
             board = other_board.move(x1, y1, x2, y2)
             king = board.other_player[board.turn.color].king # obtain the CURRENT player's king
-            
+
             # if the king is not present, return True
             if not king.bb.any():
+                board.undo()
                 return True
             
             board.undo()
@@ -501,18 +511,18 @@ class Board:
 def random_game() -> None:
     """Continually play random moves until one computer runs out of legal moves."""
 
-    custom_board = [[0, 8, 0, 0, 12, 0, 8, 0],
+    custom_board = [[10, 8, 9, 11, 12, 9, 8, 10],
                     [0] * 8,
                     [0] * 8,
                     [0] * 8,
                     [0] * 8,
                     [0] * 8,
                     [0] * 8,
-                    [0, 2, 0, 0, 6, 0, 2, 0]
+                    [4, 2, 3, 5, 6, 3, 2, 4]
                     ][::-1]
 
-    board = Board().default()
-    # board = Board(board=np.array(custom_board))
+    # board = Board().default()
+    board = Board(board=np.array(custom_board))
 
     while True:
         legals = list(board.legal_moves())
@@ -529,7 +539,6 @@ def random_game() -> None:
         board = board.swap_turn()
 
         print(board)
-        input()
 
 
 ###################################################################################################
