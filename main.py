@@ -38,8 +38,6 @@ class Bitboard:
         """Bitboard class.
         Args:
             bb (np.ndarray | None, optional): The bitboard. Defaults to None.
-            x (int, optional): The width of the bitboard. Defaults to 8.
-            y (int, optional): The height of the bitboard. Defaults to 8.
             \nbb argument takes priority over x and y.
         """
         
@@ -105,25 +103,6 @@ class Piece:
 
     def __str__(self) -> str:
         return f"{self.color} {self.name} ID {self.id}"
-
-    # def expand_movement(self, short_movement: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    #     """Expand the short movement list for all cases of movement.
-    #     Args:
-    #         short_movement (list[Coordinate]): The short-movement list.
-    #     Returns:
-    #         list[Coordinate]: The expanded movement list.
-    #     """
-
-    #     mvmt = []
-    #     for dx, dy in short_movement:
-    #         for _ in range(2):
-    #             mvmt.append((dx, dy))
-    #             mvmt.append((dx, -dy))
-    #             mvmt.append((-dx, dy))
-    #             mvmt.append((-dx, -dy))
-    #             dy, dx = dx, dy
-
-    #     return mvmt
 
     def copy(self, color: Literal['white', 'black'] = None, name: str | None = None, movelong: bool = None) -> 'Piece':
         """Create a copy of the piece, with optional overrides."""
@@ -248,27 +227,31 @@ class Board:
         """Swap the turn of the board."""
         swapped_turn = self.other_player[self.turn.color]
         return Board(swapped_turn, self.board)
-
+    
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
+        id_map = {piece.id: piece for piece in self.pieces}
 
-        id = {piece.id : piece for piece in self.pieces}
+        non_zero_indices = np.argwhere(self.board != 0)
 
-        for x in range(8):
-            for y in range(8):
-                cell = int(self.board[x, y])
-                if cell == 0: continue
-                id[cell].bb[x, y] = 1
+        for x, y in non_zero_indices:
+            cell = int(self.board[x, y])
+            id_map[cell].bb[x, y] = 1
     
     def update_piece_bitboard_data(self) -> None:
         """Procedure to update important information regarding the pieces and bitboards."""
 
-        self.self_bb = Bitboard().sum([piece.bb for piece in self.self_pieces])
-        self.self_pos = self.self_bb.pos()
-        self.other_bb = Bitboard().sum([piece.bb for piece in self.other_pieces])
-        self.other_pos = self.other_bb.pos()
-        self.all_bb = Bitboard().sum([piece.bb for piece in self.pieces])
-        self.all_pos = self.all_bb.pos()
+        all_bb_array: np.ndarray = np.add.reduce([piece.bb.bb for piece in self.pieces], axis=0)
+        self_bb_array: np.ndarray = np.add.reduce([piece.bb.bb for piece in self.self_pieces], axis=0)
+        other_bb_array: np.ndarray = np.add.reduce([piece.bb.bb for piece in self.other_pieces], axis=0)
+
+        self.all_bb = Bitboard(all_bb_array)
+        self.self_bb = Bitboard(self_bb_array)
+        self.other_bb = Bitboard(other_bb_array)
+
+        self.all_pos = [(y, x) for x, y in np.argwhere(all_bb_array)]
+        self.self_pos = [(y, x) for x, y in np.argwhere(self_bb_array)]
+        self.other_pos = [(y, x) for x, y in np.argwhere(other_bb_array)]
 
     def default(self) -> 'Board':
         """Return the default Chess board in piece IDs.
@@ -309,8 +292,8 @@ class Board:
         for piece in self.pieces:
             print(f"ID: {piece.id}")
             print(piece.bb)
-
-    def move(self, x1: int, y1: int, x2: int, y2: int) -> 'Board':
+    
+    def move(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Move a piece at (x1, y1) to (x2, y2).
         Args:
             x1: The starting X coordinate.
@@ -321,16 +304,14 @@ class Board:
             Board: The new board state.
         """
 
-        new = self.copy()
-
         # swap coordinates due to strange access error
         x1, y1 = y1, x1
         x2, y2 = y2, x2
 
-        start_id = new.board[x1, y1]
-        start_piece = new.id[start_id]
-        end_id = new.board[x2, y2]
-        end_piece = new.id[end_id]
+        start_id = self.board[x1, y1]
+        start_piece = self.id[start_id]
+        end_id = self.board[x2, y2]
+        end_piece = self.id[end_id]
 
         # on start bb: set to 0 at start and set to 1 at end
         start_piece.bb[x1, y1] = 0
@@ -339,18 +320,23 @@ class Board:
         end_piece.bb[x2, y2] = 0
 
         # update board
-        new.board[x1, y1] = 0
-        new.board[x2, y2] = start_id
+        self.board[x1, y1] = 0
+        self.board[x2, y2] = start_id
 
         # update last move data
-        new.last_piece_taken = end_piece
-        new.last_piece_moved = start_piece
-        new.last_move = (x1, y1), (x2, y2)
+        self.last_piece_taken = end_piece
+        self.last_piece_moved = start_piece
+        self.last_move = (x1, y1), (x2, y2)
 
         # update crucial bitboard data
-        new.update_piece_bitboard_data()
-
-        return new
+        # self.self_bb[x1, y1] = 0
+        # self.self_bb[x2, y2] = 1
+        # self.self_pos = self.self_bb.pos()
+        # self.other_bb[x2, y2] = 0
+        # self.other_pos = self.other_bb.pos()
+        # self.all_bb[x1, y1] = 0
+        # self.all_bb[x2, y2] = 1
+        # self.all_pos = self.all_bb.pos()
 
     def undo(self) -> None:
         """Undo the previous move."""
@@ -363,6 +349,16 @@ class Board:
         self.last_piece_moved.bb[x2, y2] = 0
         self.last_piece_moved.bb[x1, y1] = 1
         self.board[x1, y1] = self.last_piece_moved.id
+
+        # update crucial bitboard data
+        # self.self_bb[x1, y1] = 1
+        # self.self_bb[x2, y2] = 0
+        # self.self_pos = self.self_bb.pos()
+        # self.other_bb[x2, y2] = 1 if self.last_piece_taken.id else 0
+        # self.other_pos = self.other_bb.pos()
+        # self.all_bb[x1, y1] = 1
+        # self.all_bb[x2, y2] = 1 if self.last_piece_taken.id else 0
+        # self.all_pos = self.all_bb.pos()
 
     def present_pieces(self) -> list[Piece | Pawn]:
         """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
@@ -473,14 +469,13 @@ class Board:
             Iterable(list[Coordinate, Coordinate]): The legal moves in pairs of coordinates.
         """
 
-        # legals_nocheck = self.legal_nocheck()
-        legals_nocheck = list(self.legal_nocheck())
+        legals_nocheck = self.legal_nocheck()
 
         for [(x1, y1), (x2, y2)] in legals_nocheck:
-            board = self.move(x1, y1, x2, y2)
-            if not board.isking_vulnerable():
+            self.move(x1, y1, x2, y2)
+            if not self.isking_vulnerable():
                 yield [(x1, y1), (x2, y2)]
-            board.undo()
+            self.undo()
 
     def isking_vulnerable(self) -> bool:
         """Return whether the turn player's king can be taken.
@@ -493,15 +488,15 @@ class Board:
         other_legals_nocheck = other_board.legal_nocheck()
 
         for [(x1, y1), (x2, y2)] in other_legals_nocheck:
-            board = other_board.move(x1, y1, x2, y2)
-            king = board.other_player[board.turn.color].king # obtain the CURRENT player's king
+            other_board.move(x1, y1, x2, y2)
+            king = other_board.other_player[other_board.turn.color].king # obtain the CURRENT player's king
 
             # if the king is not present, return True
             if not king.bb.any():
-                board.undo()
+                other_board.undo()
                 return True
             
-            board.undo()
+            other_board.undo()
         return False
 
 
@@ -535,7 +530,7 @@ def random_game() -> None:
         [(x1, y1), (x2, y2)] = random_move
         print(f"{board.turn.color} moves: {chr(x1 + 97)}{y1+1} -> {chr(x2 + 97)}{y2+1}")
 
-        board = board.move(x1, y1, x2, y2)
+        board.move(x1, y1, x2, y2)
         board = board.swap_turn()
 
         print(board)

@@ -1,4 +1,6 @@
 import cProfile
 import main
 
-cProfile.run('list(main.Board().legal_moves())',sort='cumulative')
+board = main.Board().default()
+
+cProfile.run('list(board.legal_moves())',sort='cumulative')

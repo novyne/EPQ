@@ -3169,12 +3169,14 @@ def isking_vulnerable(self) -> bool:
 
 Aside from that minor error, the legal move function worked without issues.
 
+### Optimisation 2
+
 I ran another time profile:
 
 ```bash
    ncalls  tottime  percall  cumtime  percall filename:lineno(function)
         1    0.000    0.000   62.901   62.901 {built-in method builtins.exec}
-        1    0.000    0.000   62.901   62.901 <string>:1(<module>)
+        1    0.000    0.000   62.901   62.901 <string>:1(<module>) # This means that the whole script took 62.9 seconds to complete.
         1    0.000    0.000   62.901   62.901 main.py:547(main)
         1    0.011    0.011   62.901   62.901 main.py:511(random_game)
      7254    0.104    0.000   62.701    0.009 main.py:470(legal_moves)
@@ -3216,4 +3218,672 @@ I ran another time profile:
 
 ```
 
-I was particularly interest in the `__init__` functions, mainly due to the large number of classes I was creating.
+I was particularly interested in the `__init__` functions, mainly due to the large number of classes I was creating. Here is the time profile, only including `__init__` functions from my custom classes, functions that returned classes, or functions that were called in `__init__` statements.
+
+```bash
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   220119    0.760    0.000   56.794    0.000 main.py:313(move) # Returns Board
+   448683    2.647    0.000   42.852    0.000 main.py:263(update_piece_bitboard_data) # In Board
+   228564    1.201    0.000   36.522    0.000 main.py:177(__init__) # Board init
+   220119    0.178    0.000   35.383    0.000 main.py:243(copy) # Returns Board
+   457128    1.915    0.000    6.697    0.000 main.py:152(__init__) # Player init
+  2971332    2.471    0.000    5.003    0.000 main.py:89(__init__) # Piece init
+  5663430    1.491    0.000    3.310    0.000 main.py:37(__init__) # Bitboard init
+     8444    0.008    0.000    1.325    0.000 main.py:247(swap_turn) # Returns Board
+   457128    0.332    0.000    1.238    0.000 main.py:139(__init__) # Pawn init
+```
+
+The main culprit was the `Board` init statement; it was responsible for the top four slowest functions in the program. After some investigation, I realised that a large portion of its time was due to `update_piece_bitboard_data` and `Board.copy`. Instead, I looked into `update_piece_bitboard_data`.
+
+```py
+def update_piece_bitboard_data(self) -> None:
+    """Procedure to update important information regarding the pieces and bitboards."""
+
+    self.self_bb = Bitboard().sum([piece.bb for piece in self.self_pieces])
+    self.self_pos = self.self_bb.pos()
+    self.other_bb = Bitboard().sum([piece.bb for piece in self.other_pieces])
+    self.other_pos = self.other_bb.pos()
+    self.all_bb = Bitboard().sum([piece.bb for piece in self.pieces])
+    self.all_pos = self.all_bb.pos()
+```
+
+Unfortunately, it looked as though `Bitboard.sum` was rather computationally expensive as well. Instead, I could reduce the calls to `update_piece_bitboard_data` by also updating the metaboards along with the individual piece boards.
+
+For now, I kept the call in `Board.__init__` and instead replaced the call in `Board.move`.
+
+Old:
+
+```py
+def move(self, x1: int, y1: int, x2: int, y2: int) -> 'Board':
+    """Move a piece at (x1, y1) to (x2, y2).
+    Args:
+        x1: The starting X coordinate.
+        y1: The starting Y coordinate.
+        x2: The destination X coordinate.
+        y2: The destination Y coordinate.
+    Returns:
+        Board: The new board state.
+    """
+
+    new = self.copy()
+
+    ...
+
+    # update crucial bitboard data
+    new.update_piece_bitboard_data()
+
+    return new
+```
+
+New:
+
+```py
+def move(self, x1: int, y1: int, x2: int, y2: int) -> 'Board':
+    """Move a piece at (x1, y1) to (x2, y2).
+    Args:
+        x1: The starting X coordinate.
+        y1: The starting Y coordinate.
+        x2: The destination X coordinate.
+        y2: The destination Y coordinate.
+    Returns:
+        Board: The new board state.
+    """
+
+    new = self.copy()
+
+    # swap coordinates due to strange access error
+    x1, y1 = y1, x1
+    x2, y2 = y2, x2
+
+    start_id = new.board[x1, y1]
+    start_piece = new.id[start_id]
+    end_id = new.board[x2, y2]
+    end_piece = new.id[end_id]
+
+    # on start bb: set to 0 at start and set to 1 at end
+    start_piece.bb[x1, y1] = 0
+    start_piece.bb[x2, y2] = 1
+    # on end bb: set to 0 at end
+    end_piece.bb[x2, y2] = 0
+
+    # update board
+    new.board[x1, y1] = 0
+    new.board[x2, y2] = start_id
+
+    # update last move data
+    new.last_piece_taken = end_piece
+    new.last_piece_moved = start_piece
+    new.last_move = (x1, y1), (x2, y2)
+
+    # update crucial bitboard data
+    self.self_bb[x1, y1] = 0
+    self.self_bb[x2, y2] = 1
+    self.self_pos = self.self_bb.pos()
+    self.other_bb[x2, y2] = 0
+    self.other_pos = self.other_bb.pos()
+    self.all_bb[x1, y1] = 0
+    self.all_bb[x2, y2] = 1
+    self.all_pos = self.all_bb.pos()
+
+    return new
+```
+
+New time profile:
+
+```bash
+   29313177 function calls in 30.828 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000   30.828   30.828 {built-in method builtins.exec}
+        1    0.000    0.000   30.828   30.828 <string>:1(<module>)
+        1    0.000    0.000   30.828   30.828 main.py:554(main)
+        1    0.010    0.010   30.828   30.828 main.py:518(random_game)
+     5968    0.084    0.000   30.620    0.005 main.py:477(legal_moves)
+     6041    0.562    0.000   29.061    0.005 main.py:492(isking_vulnerable)
+   114433    0.752    0.000   26.981    0.000 main.py:313(move)
+   120800    0.633    0.000   19.545    0.000 main.py:177(__init__)
+   114433    0.093    0.000   18.641    0.000 main.py:243(copy)
+   723167    7.267    0.000   14.095    0.000 main.py:69(pos)
+   120799    0.672    0.000   12.017    0.000 main.py:263(update_piece_bitboard_data)
+   723167    1.448    0.000    6.742    0.000 numeric.py:591(argwhere)
+   362397    0.681    0.000    4.555    0.000 main.py:61(sum)
+  1446334    0.966    0.000    4.341    0.000 fromnumeric.py:51(_wrapfunc)
+   362397    0.440    0.000    3.763    0.000 fromnumeric.py:2338(sum)
+   241600    1.012    0.000    3.512    0.000 main.py:152(__init__)
+   362397    0.739    0.000    3.236    0.000 fromnumeric.py:69(_wrapreduction)
+   723167    0.291    0.000    3.232    0.000 fromnumeric.py:630(transpose)
+   120800    2.826    0.000    3.035    0.000 main.py:252(write_bitboards_from_board)
+  1570400    1.296    0.000    2.618    0.000 main.py:89(__init__)
+   553234    2.547    0.000    2.547    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+   723167    1.498    0.000    2.247    0.000 fromnumeric.py:41(_wrapit)
+   723167    0.302    0.000    1.702    0.000 fromnumeric.py:2018(nonzero)
+  2295194    0.604    0.000    1.372    0.000 main.py:37(__init__)
+   120475    0.112    0.000    1.141    0.000 main.py:459(legal_nocheck)
+   190837    0.185    0.000    1.124    0.000 main.py:65(any)
+     6366    0.006    0.000    1.003    0.000 main.py:247(swap_turn)
+   190837    0.152    0.000    0.903    0.000 fromnumeric.py:2477(any)
+   723167    0.893    0.000    0.893    0.000 {method 'nonzero' of 'numpy.ndarray' objects}
+  1932797    0.768    0.000    0.768    0.000 {built-in method numpy.zeros}
+   190837    0.251    0.000    0.751    0.000 fromnumeric.py:89(_wrapreduction_any_all)
+  2531898    0.681    0.000    0.681    0.000 {built-in method builtins.getattr}
+   241600    0.177    0.000    0.648    0.000 main.py:139(__init__)
+   132739    0.364    0.000    0.601    0.000 main.py:415(piece_legal_nocheck)
+  2386531    0.535    0.000    0.535    0.000 main.py:48(__setitem__)
+     6367    0.031    0.000    0.419    0.000 main.py:374(present_pieces)
+  1570400    0.285    0.000    0.285    0.000 {method 'get' of 'dict' objects}
+   114107    0.170    0.000    0.257    0.000 main.py:362(undo)
+   723167    0.220    0.000    0.220    0.000 {method 'as_arrays' of 'numpy._core._multiarray_umath._array_converter' objects}
+   723167    0.219    0.000    0.219    0.000 {method 'wrap' of 'numpy._core._multiarray_umath._array_converter' objects}
+   723167    0.199    0.000    0.199    0.000 {method 'transpose' of 'numpy.ndarray' objects}
+   723167    0.119    0.000    0.119    0.000 fromnumeric.py:3523(ndim)
+   553234    0.115    0.000    0.115    0.000 {method 'items' of 'dict' objects}
+   397345    0.097    0.000    0.097    0.000 {built-in method builtins.isinstance}
+   723167    0.087    0.000    0.087    0.000 numeric.py:587(_argwhere_dispatcher)
+   723167    0.086    0.000    0.086    0.000 fromnumeric.py:626(_transpose_dispatcher)
+   723167    0.078    0.000    0.078    0.000 fromnumeric.py:3519(_ndim_dispatcher)
+   723167    0.077    0.000    0.077    0.000 fromnumeric.py:2014(_nonzero_dispatcher)
+   362397    0.057    0.000    0.057    0.000 fromnumeric.py:2333(_sum_dispatcher)
+   241600    0.053    0.000    0.053    0.000 {method 'copy' of 'list' objects}
+      650    0.028    0.000    0.052    0.000 {built-in method builtins.print}
+   190837    0.036    0.000    0.036    0.000 fromnumeric.py:2472(_any_dispatcher)
+      325    0.019    0.000    0.025    0.000 main.py:217(__str__)
+    20800    0.003    0.000    0.003    0.000 {method 'isupper' of 'str' objects}
+      325    0.001    0.000    0.002    0.000 {method 'join' of 'str' objects}
+      325    0.001    0.000    0.002    0.000 random.py:341(choice)
+     2925    0.001    0.000    0.001    0.000 main.py:240(<genexpr>)
+      325    0.001    0.000    0.001    0.000 random.py:242(_randbelow_with_getrandbits)
+     3250    0.001    0.000    0.001    0.000 {built-in method builtins.chr}
+      502    0.000    0.000    0.000    0.000 {method 'getrandbits' of '_random.Random' objects}
+      650    0.000    0.000    0.000    0.000 {built-in method builtins.len}
+      325    0.000    0.000    0.000    0.000 {method 'bit_length' of 'int' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+        1    0.000    0.000    0.000    0.000 {built-in method numpy.array}
+```
+
+Filtered as before:
+
+```bash
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   114433    0.752    0.000   26.981    0.000 main.py:313(move) # Returns Board
+   120800    0.633    0.000   19.545    0.000 main.py:177(__init__) # Board init
+   114433    0.093    0.000   18.641    0.000 main.py:243(copy) # Returns Board
+   120799    0.672    0.000   12.017    0.000 main.py:263(update_piece_bitboard_data) # In Board
+   362397    0.681    0.000    4.555    0.000 main.py:61(sum) # Returns Bitboard
+   241600    1.012    0.000    3.512    0.000 main.py:152(__init__) # Player init
+  1570400    1.296    0.000    2.618    0.000 main.py:89(__init__) # Piece init
+  2295194    0.604    0.000    1.372    0.000 main.py:37(__init__) # Bitboard init
+     6366    0.006    0.000    1.003    0.000 main.py:247(swap_turn) # Returns Board
+   241600    0.177    0.000    0.648    0.000 main.py:139(__init__) # Pawn init
+   114107    0.170    0.000    0.257    0.000 main.py:362(undo) # Returns Board
+```
+
+For reference, here is the previous filtered time profile:
+
+```bash
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   220119    0.760    0.000   56.794    0.000 main.py:313(move) # Returns Board
+   448683    2.647    0.000   42.852    0.000 main.py:263(update_piece_bitboard_data) # In Board
+   228564    1.201    0.000   36.522    0.000 main.py:177(__init__) # Board init
+   220119    0.178    0.000   35.383    0.000 main.py:243(copy) # Returns Board
+   457128    1.915    0.000    6.697    0.000 main.py:152(__init__) # Player init
+  2971332    2.471    0.000    5.003    0.000 main.py:89(__init__) # Piece init
+  5663430    1.491    0.000    3.310    0.000 main.py:37(__init__) # Bitboard init
+     8444    0.008    0.000    1.325    0.000 main.py:247(swap_turn) # Returns Board
+   457128    0.332    0.000    1.238    0.000 main.py:139(__init__) # Pawn init
+```
+
+Admittedly, time profiles are not easy to compare if they are not run for the same time. However, the order of the functions have changed.
+
+I decided it would instead be better to initialise the default position and profile the time for a single legal move call.
+
+```py
+"""In time_test.py:"""
+
+import cProfile
+import main
+
+cProfile.run('list(main.Board().default().legal_moves())',sort='cumulative')
+```
+
+Time profile below:
+
+```bash
+123200 function calls in 0.146 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.146    0.146 {built-in method builtins.exec}
+        1    0.000    0.000    0.146    0.146 <string>:1(<module>)
+       21    0.000    0.000    0.146    0.007 main.py:477(legal_moves)
+       20    0.002    0.000    0.139    0.007 main.py:492(isking_vulnerable)
+      439    0.003    0.000    0.129    0.000 main.py:313(move)
+      459    0.002    0.000    0.090    0.000 main.py:177(__init__)
+      439    0.000    0.000    0.086    0.000 main.py:243(copy)
+     2820    0.055    0.000    0.080    0.000 main.py:69(pos)
+      459    0.002    0.000    0.059    0.000 main.py:263(update_piece_bitboard_data)
+     2820    0.005    0.000    0.025    0.000 numeric.py:591(argwhere)
+     5640    0.004    0.000    0.016    0.000 fromnumeric.py:51(_wrapfunc)
+     1377    0.002    0.000    0.016    0.000 main.py:61(sum)
+      459    0.012    0.000    0.014    0.000 main.py:252(write_bitboards_from_board)
+     1377    0.002    0.000    0.013    0.000 fromnumeric.py:2338(sum)
+      918    0.004    0.000    0.013    0.000 main.py:152(__init__)
+     2820    0.001    0.000    0.012    0.000 fromnumeric.py:630(transpose)
+     1377    0.003    0.000    0.011    0.000 fromnumeric.py:69(_wrapreduction)
+     5967    0.005    0.000    0.010    0.000 main.py:89(__init__)
+     2069    0.009    0.000    0.009    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+     2820    0.006    0.000    0.008    0.000 fromnumeric.py:41(_wrapit)
+     2820    0.001    0.000    0.006    0.000 fromnumeric.py:2018(nonzero)
+      460    0.001    0.000    0.006    0.000 main.py:459(legal_nocheck)
+     8721    0.002    0.000    0.005    0.000 main.py:37(__init__)
+       20    0.000    0.000    0.004    0.000 main.py:247(swap_turn)
+      692    0.001    0.000    0.004    0.000 main.py:65(any)
+    19517    0.003    0.000    0.003    0.000 main.py:48(__setitem__)
+     2820    0.003    0.000    0.003    0.000 {method 'nonzero' of 'numpy.ndarray' objects}
+      692    0.001    0.000    0.003    0.000 fromnumeric.py:2477(any)
+      280    0.002    0.000    0.003    0.000 main.py:415(piece_legal_nocheck)
+     7344    0.003    0.000    0.003    0.000 {built-in method numpy.zeros}
+      692    0.001    0.000    0.003    0.000 fromnumeric.py:89(_wrapreduction_any_all)
+     9837    0.002    0.000    0.002    0.000 {built-in method builtins.getattr}
+      918    0.001    0.000    0.002    0.000 main.py:139(__init__)
+       21    0.000    0.000    0.001    0.000 main.py:374(present_pieces)
+      439    0.001    0.000    0.001    0.000 main.py:362(undo)
+     5967    0.001    0.000    0.001    0.000 {method 'get' of 'dict' objects}
+     2820    0.001    0.000    0.001    0.000 {method 'as_arrays' of 'numpy._core._multiarray_umath._array_converter' objects}
+      168    0.001    0.000    0.001    0.000 main.py:378(get_pawn_movement)
+     2820    0.001    0.000    0.001    0.000 {method 'wrap' of 'numpy._core._multiarray_umath._array_converter' objects}
+     2820    0.001    0.000    0.001    0.000 {method 'transpose' of 'numpy.ndarray' objects}
+     2820    0.000    0.000    0.000    0.000 fromnumeric.py:3523(ndim)
+     2069    0.000    0.000    0.000    0.000 {method 'items' of 'dict' objects}
+     1608    0.000    0.000    0.000    0.000 {built-in method builtins.isinstance}
+     2820    0.000    0.000    0.000    0.000 fromnumeric.py:626(_transpose_dispatcher)
+     2820    0.000    0.000    0.000    0.000 numeric.py:587(_argwhere_dispatcher)
+     2820    0.000    0.000    0.000    0.000 fromnumeric.py:2014(_nonzero_dispatcher)
+     2820    0.000    0.000    0.000    0.000 fromnumeric.py:3519(_ndim_dispatcher)
+     1377    0.000    0.000    0.000    0.000 fromnumeric.py:2333(_sum_dispatcher)
+      918    0.000    0.000    0.000    0.000 {method 'copy' of 'list' objects}
+      692    0.000    0.000    0.000    0.000 fromnumeric.py:2472(_any_dispatcher)
+      264    0.000    0.000    0.000    0.000 {method 'append' of 'list' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+```
+
+Filtered to remove less relevant information:
+
+```bash
+123200 function calls in 0.146 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.146    0.146 {built-in method builtins.exec}
+        1    0.000    0.000    0.146    0.146 <string>:1(<module>)
+       21    0.000    0.000    0.146    0.007 main.py:477(legal_moves)
+       20    0.002    0.000    0.139    0.007 main.py:492(isking_vulnerable)
+      439    0.003    0.000    0.129    0.000 main.py:313(move)
+      459    0.002    0.000    0.090    0.000 main.py:177(__init__)
+      439    0.000    0.000    0.086    0.000 main.py:243(copy)
+     2820    0.055    0.000    0.080    0.000 main.py:69(pos)
+      459    0.002    0.000    0.059    0.000 main.py:263(update_piece_bitboard_data)
+     1377    0.002    0.000    0.016    0.000 main.py:61(sum)
+      459    0.012    0.000    0.014    0.000 main.py:252(write_bitboards_from_board)
+      918    0.004    0.000    0.013    0.000 main.py:152(__init__)
+     5967    0.005    0.000    0.010    0.000 main.py:89(__init__)
+      460    0.001    0.000    0.006    0.000 main.py:459(legal_nocheck)
+     8721    0.002    0.000    0.005    0.000 main.py:37(__init__)
+       20    0.000    0.000    0.004    0.000 main.py:247(swap_turn)
+      692    0.001    0.000    0.004    0.000 main.py:65(any)
+    19517    0.003    0.000    0.003    0.000 main.py:48(__setitem__)
+      280    0.002    0.000    0.003    0.000 main.py:415(piece_legal_nocheck)
+      918    0.001    0.000    0.002    0.000 main.py:139(__init__)
+       21    0.000    0.000    0.001    0.000 main.py:374(present_pieces)
+      439    0.001    0.000    0.001    0.000 main.py:362(undo)
+      168    0.001    0.000    0.001    0.000 main.py:378(get_pawn_movement)
+```
+
+My biggest concerns are below:
+
+* `Board.__init__` (as a consequence of below)
+  * `Board.copy`
+    * Reduce calls of this function
+  * `Board.update_piece_bitboard_data`
+    * Optimise this function
+  * `Board.write_bitboards_from_board`
+    * Optimise this function
+* `Bitboard.pos`
+  * Optimise this function
+* `Board.move`
+  * Due to the speed of `Board.copy`
+
+### `Board.copy` Optimisation
+
+I first identified each call of this function. Its only usage was in `Board.move`.
+
+I constructed a separate move function that would not return a new `Board` instance and instead worked off the new instance.
+
+```py
+def move(self, x1: int, y1: int, x2: int, y2: int) -> None:
+    """Move a piece at (x1, y1) to (x2, y2).
+    Args:
+        x1: The starting X coordinate.
+        y1: The starting Y coordinate.
+        x2: The destination X coordinate.
+        y2: The destination Y coordinate.
+    Returns:
+        Board: The new board state.
+    """
+
+    # swap coordinates due to strange access error
+    x1, y1 = y1, x1
+    x2, y2 = y2, x2
+
+    start_id = self.board[x1, y1]
+    start_piece = self.id[start_id]
+    end_id = self.board[x2, y2]
+    end_piece = self.id[end_id]
+
+    # on start bb: set to 0 at start and set to 1 at end
+    start_piece.bb[x1, y1] = 0
+    start_piece.bb[x2, y2] = 1
+    # on end bb: set to 0 at end
+    end_piece.bb[x2, y2] = 0
+
+    # update board
+    self.board[x1, y1] = 0
+    self.board[x2, y2] = start_id
+
+    # update last move data
+    self.last_piece_taken = end_piece
+    self.last_piece_moved = start_piece
+    self.last_move = (x1, y1), (x2, y2)
+
+    # update crucial bitboard data
+    self.self_bb[x1, y1] = 0
+    self.self_bb[x2, y2] = 1
+    self.self_pos = self.self_bb.pos()
+    self.other_bb[x2, y2] = 0
+    self.other_pos = self.other_bb.pos()
+    self.all_bb[x1, y1] = 0
+    self.all_bb[x2, y2] = 1
+    self.all_pos = self.all_bb.pos()
+```
+
+I then edited each call of `Board.move` to account for the fact that a new board state was not being returned.
+
+Since the function was still working correctly, I could confidently remove the old move function. After doing so, I ran another time profile in `time_test.py`, the *filtered* results of which are below.
+
+```bash
+54240 function calls in 0.078 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.078    0.078 {built-in method builtins.exec}
+        1    0.000    0.000    0.078    0.078 <string>:1(<module>)
+       27    0.000    0.000    0.078    0.003 main.py:454(legal_moves)
+       26    0.001    0.000    0.075    0.003 main.py:468(isking_vulnerable)
+     1920    0.044    0.000    0.060    0.000 main.py:69(pos)
+      560    0.003    0.000    0.060    0.000 main.py:294(move)
+      587    0.001    0.000    0.007    0.000 main.py:436(legal_nocheck)
+       26    0.000    0.000    0.006    0.000 main.py:228(swap_turn)
+       26    0.000    0.000    0.006    0.000 main.py:158(__init__)
+      885    0.001    0.000    0.004    0.000 main.py:65(any)
+       26    0.000    0.000    0.004    0.000 main.py:244(update_piece_bitboard_data)
+      335    0.002    0.000    0.004    0.000 main.py:392(piece_legal_nocheck)
+     6982    0.002    0.000    0.002    0.000 main.py:48(__setitem__)
+       27    0.000    0.000    0.002    0.000 main.py:351(present_pieces)
+      560    0.001    0.000    0.001    0.000 main.py:339(undo)
+       78    0.000    0.000    0.001    0.000 main.py:61(sum)
+      216    0.001    0.000    0.001    0.000 main.py:355(get_pawn_movement)
+       26    0.001    0.000    0.001    0.000 main.py:233(write_bitboards_from_board)
+       52    0.000    0.000    0.001    0.000 main.py:133(__init__)
+      338    0.000    0.000    0.001    0.000 main.py:89(__init__)
+      494    0.000    0.000    0.000    0.000 main.py:37(__init__)
+```
+
+Compared to the previous profile:
+
+```bash
+123200 function calls in 0.146 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.146    0.146 {built-in method builtins.exec}
+        1    0.000    0.000    0.146    0.146 <string>:1(<module>)
+       21    0.000    0.000    0.146    0.007 main.py:477(legal_moves)
+       20    0.002    0.000    0.139    0.007 main.py:492(isking_vulnerable)
+      439    0.003    0.000    0.129    0.000 main.py:313(move)
+      459    0.002    0.000    0.090    0.000 main.py:177(__init__)
+      439    0.000    0.000    0.086    0.000 main.py:243(copy)
+     2820    0.055    0.000    0.080    0.000 main.py:69(pos)
+      459    0.002    0.000    0.059    0.000 main.py:263(update_piece_bitboard_data)
+     1377    0.002    0.000    0.016    0.000 main.py:61(sum)
+      459    0.012    0.000    0.014    0.000 main.py:252(write_bitboards_from_board)
+      918    0.004    0.000    0.013    0.000 main.py:152(__init__)
+     5967    0.005    0.000    0.010    0.000 main.py:89(__init__)
+      460    0.001    0.000    0.006    0.000 main.py:459(legal_nocheck)
+     8721    0.002    0.000    0.005    0.000 main.py:37(__init__)
+       20    0.000    0.000    0.004    0.000 main.py:247(swap_turn)
+      692    0.001    0.000    0.004    0.000 main.py:65(any)
+    19517    0.003    0.000    0.003    0.000 main.py:48(__setitem__)
+      280    0.002    0.000    0.003    0.000 main.py:415(piece_legal_nocheck)
+      918    0.001    0.000    0.002    0.000 main.py:139(__init__)
+       21    0.000    0.000    0.001    0.000 main.py:374(present_pieces)
+      439    0.001    0.000    0.001    0.000 main.py:362(undo)
+      168    0.001    0.000    0.001    0.000 main.py:378(get_pawn_movement)
+```
+
+Overall, the time to run the function has halved, as well as the total function calls reducing by more than half.
+
+* [ ] `Board.__init__` (as a consequence of below)
+  * [x] `Board.copy`
+  * [ ] `Board.update_piece_bitboard_data`
+    * Optimise this function
+    * Reduce or remove calls to this function
+  * [ ] `Board.write_bitboards_from_board`
+    * Optimise this function
+* [ ] `Bitboard.pos`
+  * Optimise this function
+* [ ] `Board.move`
+  * Due to the speed of `Board.copy`
+
+### `Board.update_piece_bitboard_data` Optimisation
+
+Here is the above function:
+
+```py
+def update_piece_bitboard_data(self) -> None:
+    """Procedure to update important information regarding the pieces and bitboards."""
+
+    self.self_bb = Bitboard().sum([piece.bb for piece in self.self_pieces])
+    self.self_pos = self.self_bb.pos()
+    self.other_bb = Bitboard().sum([piece.bb for piece in self.other_pieces])
+    self.other_pos = self.other_bb.pos()
+    self.all_bb = Bitboard().sum([piece.bb for piece in self.pieces])
+    self.all_pos = self.all_bb.pos()
+```
+
+`NumPy` contains a special function I could use to sum the bitboards: `np.add.reduce`. I replaced the previous functions with it (and `Bitboard.pos` to replace the bitboard changes):
+
+```py
+def update_piece_bitboard_data(self) -> None:
+    """Procedure to update important information regarding the pieces and bitboards."""
+
+    all_bb_array: np.ndarray = np.add.reduce([piece.bb.bb for piece in self.pieces], axis=0)
+    self_bb_array: np.ndarray = np.add.reduce([piece.bb.bb for piece in self.self_pieces], axis=0)
+    other_bb_array: np.ndarray = np.add.reduce([piece.bb.bb for piece in self.other_pieces], axis=0)
+
+    self.all_bb = Bitboard(all_bb_array)
+    self.self_bb = Bitboard(self_bb_array)
+    self.other_bb = Bitboard(other_bb_array)
+
+    self.all_pos = [(y, x) for x, y in np.argwhere(all_bb_array)]
+    self.self_pos = [(y, x) for x, y in np.argwhere(self_bb_array)]
+    self.other_pos = [(y, x) for x, y in np.argwhere(other_bb_array)]
+```
+
+The results of the time profile I ran after were very similar to the previous time profile.
+
+Next, I searched for each call of the function. It was only called once, at the bottom of `Board.__init__`. Unfortunately, this call was necessary, so I would have to leave it.
+
+* [ ] `Board.__init__` (as a consequence of below)
+  * [x] `Board.copy`
+  * [x] `Board.update_piece_bitboard_data`
+  * [ ] `Board.write_bitboards_from_board`
+    * Optimise this function
+* [ ] `Bitboard.pos`
+  * Optimise this function
+* [ ] `Board.move`
+  * Due to the speed of `Board.copy`
+
+### `Board.write_bitboards_from_board` Optimisation
+
+Here is the above function:
+
+```py
+def write_bitboards_from_board(self) -> None:
+    """Write the piece bitboards from a board state."""
+
+    id = {piece.id : piece for piece in self.pieces}
+
+    for x in range(8):
+        for y in range(8):
+            cell = int(self.board[x, y])
+            if cell == 0: continue
+            id[cell].bb[x, y] = 1
+```
+
+Using a similar approach used in `update_piece_bitboard_data`, I could use `numpy.argwhere` to identify the ID at each coordinate and reduce the iteration dimension to 1.
+
+```py
+def write_bitboards_from_board(self) -> None:
+    """Write the piece bitboards from a board state."""
+    id_map = {piece.id: piece for piece in self.pieces}
+
+    non_zero_indices = np.argwhere(self.board != 0)
+
+    for x, y in non_zero_indices:
+        cell = int(self.board[x, y])
+        id_map[cell].bb[x, y] = 1
+```
+
+No time change was noticable after a time profile, but I kept the newer function as it was cleaner and easier to read.
+
+* [x] `Board.__init__` (as a consequence of below)
+  * [x] `Board.copy`
+  * [x] `Board.update_piece_bitboard_data`
+  * [x] `Board.write_bitboards_from_board`
+* [ ] `Bitboard.pos`
+  * Optimise this function
+* [ ] `Board.move`
+  * Due to the speed of `Board.copy`
+
+### `Bitboard.pos` Optimisation
+
+Here is the above function:
+
+```py
+def pos(self) -> list[Coordinate]:
+    return [(y, x) for x, y in np.argwhere(self.bb)]
+```
+
+It is a simple function but is unfortunately costly. It seemed as though the only way I could reduce time was by reducing the number of calls (1908 calls for 1 call of `Board.legal_moves`).
+
+It had been called four times; three in `Board.move` and one in `Board.piece_legal_nocheck`.
+
+I had noticed that `Board.undo` did not contain the code to update metabitboard data since `update_piece_bitboard_data` was being called only after a move had been verified. I tested the theory by removing the respective code in `Board.move`.
+
+Following this change, results had drastically improved. From the starting Chess position, running `Board.legal_moves` took 14662 function calls in 0.015 seconds. To compare, prior to this change, `Board.legal_moves` took around 50000 function calls in 0.075 seconds.
+
+I decided to then re-evluate which functions required the most attention. Here is the latest time profile:
+
+```bash
+14662 function calls in 0.016 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.016    0.016 {built-in method builtins.exec}
+        1    0.000    0.000    0.016    0.016 <string>:1(<module>)
+       21    0.000    0.000    0.016    0.001 main.py:466(legal_moves)
+       20    0.001    0.000    0.016    0.001 main.py:480(isking_vulnerable)
+      441    0.000    0.000    0.006    0.000 main.py:448(legal_nocheck)
+       20    0.000    0.000    0.005    0.000 main.py:226(swap_turn)
+       20    0.000    0.000    0.005    0.000 main.py:156(__init__)
+      673    0.001    0.000    0.004    0.000 main.py:63(any)
+      189    0.001    0.000    0.003    0.000 main.py:404(piece_legal_nocheck)
+      673    0.000    0.000    0.003    0.000 fromnumeric.py:2477(any)
+       20    0.001    0.000    0.003    0.000 main.py:241(update_piece_bitboard_data)
+      206    0.001    0.000    0.002    0.000 numeric.py:591(argwhere)
+      673    0.001    0.000    0.002    0.000 fromnumeric.py:89(_wrapreduction_any_all)
+      126    0.001    0.000    0.002    0.000 main.py:67(pos)
+       20    0.001    0.000    0.002    0.000 main.py:231(write_bitboards_from_board)
+      733    0.002    0.000    0.002    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+       21    0.000    0.000    0.002    0.000 main.py:363(present_pieces)
+      412    0.000    0.000    0.001    0.000 fromnumeric.py:51(_wrapfunc)
+      420    0.001    0.000    0.001    0.000 main.py:296(move)
+      206    0.000    0.000    0.001    0.000 fromnumeric.py:630(transpose)
+      420    0.001    0.000    0.001    0.000 main.py:341(undo)
+      168    0.001    0.000    0.001    0.000 main.py:367(get_pawn_movement)
+      206    0.001    0.000    0.001    0.000 fromnumeric.py:41(_wrapit)
+     3160    0.001    0.000    0.001    0.000 main.py:46(__setitem__)
+       40    0.000    0.000    0.001    0.000 main.py:131(__init__)
+      206    0.000    0.000    0.001    0.000 fromnumeric.py:2018(nonzero)
+      260    0.000    0.000    0.001    0.000 main.py:87(__init__)
+      206    0.000    0.000    0.000    0.000 {method 'nonzero' of 'numpy.ndarray' objects}
+      320    0.000    0.000    0.000    0.000 main.py:37(__init__)
+       40    0.000    0.000    0.000    0.000 main.py:118(__init__)
+      673    0.000    0.000    0.000    0.000 {method 'items' of 'dict' objects}
+      260    0.000    0.000    0.000    0.000 {built-in method numpy.zeros}
+      618    0.000    0.000    0.000    0.000 {built-in method builtins.getattr}
+      673    0.000    0.000    0.000    0.000 fromnumeric.py:2472(_any_dispatcher)
+      206    0.000    0.000    0.000    0.000 {method 'as_arrays' of 'numpy._core._multiarray_umath._array_converter' objects}
+      336    0.000    0.000    0.000    0.000 {method 'append' of 'list' objects}
+      206    0.000    0.000    0.000    0.000 {method 'wrap' of 'numpy._core._multiarray_umath._array_converter' objects}
+      206    0.000    0.000    0.000    0.000 {method 'transpose' of 'numpy.ndarray' objects}
+      260    0.000    0.000    0.000    0.000 {method 'get' of 'dict' objects}
+      231    0.000    0.000    0.000    0.000 {built-in method builtins.isinstance}
+      206    0.000    0.000    0.000    0.000 fromnumeric.py:3523(ndim)
+      206    0.000    0.000    0.000    0.000 numeric.py:587(_argwhere_dispatcher)
+      206    0.000    0.000    0.000    0.000 fromnumeric.py:626(_transpose_dispatcher)
+      206    0.000    0.000    0.000    0.000 fromnumeric.py:2014(_nonzero_dispatcher)
+      206    0.000    0.000    0.000    0.000 fromnumeric.py:3519(_ndim_dispatcher)
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+       40    0.000    0.000    0.000    0.000 {method 'copy' of 'list' objects}
+```
+
+Filtered to remove less important data:
+
+```bash
+14662 function calls in 0.016 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.016    0.016 {built-in method builtins.exec}
+        1    0.000    0.000    0.016    0.016 <string>:1(<module>)
+       21    0.000    0.000    0.016    0.001 main.py:466(legal_moves)
+       20    0.001    0.000    0.016    0.001 main.py:480(isking_vulnerable)
+      441    0.000    0.000    0.006    0.000 main.py:448(legal_nocheck)
+       20    0.000    0.000    0.005    0.000 main.py:226(swap_turn)
+       20    0.000    0.000    0.005    0.000 main.py:156(__init__)
+      673    0.001    0.000    0.004    0.000 main.py:63(any)
+      189    0.001    0.000    0.003    0.000 main.py:404(piece_legal_nocheck)
+       20    0.001    0.000    0.003    0.000 main.py:241(update_piece_bitboard_data)
+      126    0.001    0.000    0.002    0.000 main.py:67(pos)
+       20    0.001    0.000    0.002    0.000 main.py:231(write_bitboards_from_board)
+       21    0.000    0.000    0.002    0.000 main.py:363(present_pieces)
+      420    0.001    0.000    0.001    0.000 main.py:296(move)
+      420    0.001    0.000    0.001    0.000 main.py:341(undo)
+      168    0.001    0.000    0.001    0.000 main.py:367(get_pawn_movement)
+     3160    0.001    0.000    0.001    0.000 main.py:46(__setitem__)
+       40    0.000    0.000    0.001    0.000 main.py:131(__init__)
+      260    0.000    0.000    0.001    0.000 main.py:87(__init__)
+      320    0.000    0.000    0.000    0.000 main.py:37(__init__)
+       40    0.000    0.000    0.000    0.000 main.py:118(__init__)
+```
+
+The functions I thought needed attention are below:
