@@ -4,7 +4,7 @@ import numpy as np
 import os
 import random as rn
 
-from typing import Literal, NewType, Iterable
+from typing import Literal, NewType, Iterable, Optional
 
 from interface import App
 
@@ -153,7 +153,7 @@ class Player:
 
 class Board:
 
-    def __init__(self, turn: Player | None = None, board: np.ndarray | None = None) -> None:
+    def __init__(self, turn: Optional[Player] = None, board: Optional[np.ndarray] = None) -> None:
         """The class for the board.
         Args:
             turn (Player, optional): The player of whom it is their turn to move.
@@ -171,25 +171,27 @@ class Board:
             'black' : self.white
         }
 
-        self.turn = self.white if turn is None else turn
+        self.turn = turn or self.white
 
-        self.pieces: list[Piece] = [self.empty_piece] + self.white.pieces.copy() + self.black.pieces.copy()
+        self.pieces: list[Piece] = [self.empty_piece] + self.white.pieces + self.black.pieces
+        self.board = np.zeros((8,8), dtype=int) if board is None else board
 
-        self.board = np.zeros((8, 8), dtype=int) if board is None else board
         # board is an array of piece IDs
         self.write_bitboards_from_board()
         
         # join IDS to pieces
-        self.id: dict[int, Piece | Pawn] = {}
-        for piece in self.pieces:
-            self.id[piece.id] = piece
-    
+        self.id: dict[int, Piece | Pawn] = {piece.id : piece for piece in self.pieces}
+
         self.last_piece_taken: None | Piece | Pawn = None
         self.last_piece_moved: None | Piece | Pawn = None
         self.last_move: None | tuple[Coordinate, Coordinate] = None
 
-        self.self_pieces = self.white.pieces if self.turn.color == 'white' else self.black.pieces
-        self.other_pieces = self.black.pieces if self.turn.color == 'white' else self.white.pieces
+        if self.turn.color == 'white':
+            self.self_pieces = self.white.pieces
+            self.other_pieces = self.black.pieces
+        else:
+            self.self_pieces = self.black.pieces
+            self.other_pieces = self.white.pieces
 
         self.update_piece_bitboard_data()
 
@@ -360,9 +362,9 @@ class Board:
         # self.all_bb[x2, y2] = 1 if self.last_piece_taken.id else 0
         # self.all_pos = self.all_bb.pos()
 
-    def present_pieces(self) -> list[Piece | Pawn]:
-        """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
-        return [piece for piece in self.pieces if piece.bb.any() and piece.id != 0]
+    # def present_pieces(self) -> list[Piece | Pawn]:
+    #     """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
+    #     return [piece for piece in self.pieces if piece.bb.any() and piece.id != 0]
 
     def get_pawn_movement(self, x: int, y: int) -> list[list[Coordinate, Coordinate]]:
         """Obtain the possible movement of a pawn based on its position and colour.
@@ -401,6 +403,9 @@ class Board:
             movement.append([(x, y), (x, y+(dy*2))])
         return movement
 
+    def in_bounds(self, x: int, y: int) -> bool:
+        return 0 <= x < 8 and 0 <= y < 8
+
     def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
         """Get all legal moves for a single piece, specified by class instance.
         Args:
@@ -413,11 +418,8 @@ class Board:
             for dx, dy in piece.movement:
                 rx, ry = x + dx, y + dy
 
-                # cannot 'capture' own piece
-                if (rx, ry) in self.self_pos:
-                    continue
-                # out of bounds
-                if rx not in range(8) or ry not in range(8):
+                # cannot 'capture' own piece or move out of bounds
+                if not self.in_bounds(rx, ry) or (rx, ry) in self.self_pos:
                     continue
 
                 # cannot movelong
@@ -430,12 +432,8 @@ class Board:
                     sdx, sdy = dx * s, dy * s
                     rx, ry = x + sdx, y + sdy
 
-                    # cannot be out of bounds
-                    if rx not in range(8) or ry not in range(8):
-                        break
-
-                    # cannot 'capture' own piece
-                    if (rx, ry) in self.self_pos:
+                    # cannot 'capture' own piece or move out of bounds
+                    if not self.in_bounds(rx, ry) or (rx, ry) in self.self_pos:
                         break
                     # if capturing enemy piece, yield then break
                     if (rx, ry) in self.other_pos:
@@ -451,17 +449,12 @@ class Board:
             Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
         """
 
-        moveable_pieces = list(set(self.present_pieces()) & set(self.self_pieces))
-
-        for piece in moveable_pieces:
+        for piece in (p for p in self.self_pieces if p.bb.any()):
             if isinstance(piece, Pawn):
                 for x, y in piece.bb.pos():
-                    for move in self.get_pawn_movement(x, y):
-                        yield move
-                pass
-            elif isinstance(piece, Piece):
-                for move in list(self.piece_legal_nocheck(piece)):
-                    yield move
+                    yield from self.get_pawn_movement(x, y)
+            else:
+                yield from self.piece_legal_nocheck(piece)
 
     def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
         """Find all legal moves on the board.

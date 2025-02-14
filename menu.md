@@ -3796,9 +3796,11 @@ It had been called four times; three in `Board.move` and one in `Board.piece_leg
 
 I had noticed that `Board.undo` did not contain the code to update metabitboard data since `update_piece_bitboard_data` was being called only after a move had been verified. I tested the theory by removing the respective code in `Board.move`.
 
-Following this change, results had drastically improved. From the starting Chess position, running `Board.legal_moves` took 14662 function calls in 0.015 seconds. To compare, prior to this change, `Board.legal_moves` took around 50000 function calls in 0.075 seconds.
+Following this change, results had drastically improved. From the starting Chess position, running `Board.legal_moves` took 14662 function calls in 0.015 seconds. To compare, prior to this change, `Board.legal_moves` took around 50000 function calls in 0.075 seconds. Further prior, the function took 130402 function calls in 0.176 seconds.
 
-I decided to then re-evluate which functions required the most attention. Here is the latest time profile:
+### Optimisation 3
+
+I decided to then re-evaluate which functions required the most attention. Here is the latest time profile:
 
 ```bash
 14662 function calls in 0.016 seconds
@@ -3887,3 +3889,376 @@ Filtered to remove less important data:
 ```
 
 The functions I thought needed attention are below:
+
+* [ ] `Board.__init__`
+  * Optimise this function
+* [ ] `Board.swap_turn`
+  * Optimise this function
+  * Reduce calls to this function
+  * Slow as a result of `Board.__init__`
+* [ ] `Bitboard.any`
+  * Optimise this function
+  * Reduce calls to this function
+
+### `Board.__init__`
+
+Unfortunately, this function was a regular offender. I time profiled `main.Board()`:
+
+```bash
+143 function calls in 0.000 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.000    0.000 {built-in method builtins.exec}
+        1    0.000    0.000    0.000    0.000 <string>:1(<module>)
+        1    0.000    0.000    0.000    0.000 main.py:156(__init__)
+        1    0.000    0.000    0.000    0.000 main.py:241(update_piece_bitboard_data)
+        1    0.000    0.000    0.000    0.000 main.py:231(write_bitboards_from_board)
+        4    0.000    0.000    0.000    0.000 numeric.py:591(argwhere)
+        8    0.000    0.000    0.000    0.000 fromnumeric.py:51(_wrapfunc)
+       13    0.000    0.000    0.000    0.000 main.py:87(__init__)
+        2    0.000    0.000    0.000    0.000 main.py:131(__init__)
+        3    0.000    0.000    0.000    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:630(transpose)
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:41(_wrapit)
+       16    0.000    0.000    0.000    0.000 main.py:37(__init__)
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:2018(nonzero)
+       14    0.000    0.000    0.000    0.000 {built-in method numpy.zeros}
+        4    0.000    0.000    0.000    0.000 {method 'nonzero' of 'numpy.ndarray' objects}
+        2    0.000    0.000    0.000    0.000 main.py:118(__init__)
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+       12    0.000    0.000    0.000    0.000 {built-in method builtins.getattr}
+        4    0.000    0.000    0.000    0.000 {method 'wrap' of 'numpy._core._multiarray_umath._array_converter' objects}
+        4    0.000    0.000    0.000    0.000 {method 'as_arrays' of 'numpy._core._multiarray_umath._array_converter' objects}
+       13    0.000    0.000    0.000    0.000 {method 'get' of 'dict' objects}
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:3523(ndim)
+        4    0.000    0.000    0.000    0.000 {method 'transpose' of 'numpy.ndarray' objects}
+        2    0.000    0.000    0.000    0.000 {method 'copy' of 'list' objects}
+        4    0.000    0.000    0.000    0.000 numeric.py:587(_argwhere_dispatcher)
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:626(_transpose_dispatcher)
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:3519(_ndim_dispatcher)
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:2014(_nonzero_dispatcher)
+```
+
+Unfortunately, `cProfile` didn't have the precision I needed. With some modifications to `time_test.py` and the assistance of `pstats`, I could display the time of each function in a much greater degree of precision.
+
+```py
+"""time_test.py"""
+
+import cProfile
+import os
+import pstats
+import time
+
+import main
+
+PROFILE_FILE = 'cprofile.prof'
+
+def warmup():
+    start = time.perf_counter()
+    for _ in range(int(1e6)):
+        _ = 12345 ** 100
+
+    print(f"Warmup complete in {time.perf_counter() - start} seconds.")
+
+def f8_alt(x):
+    return "%14.9f" % x
+pstats.f8 = f8_alt
+
+
+warmup()
+
+cProfile.run('main.Board()',PROFILE_FILE,sort='cumulative')
+
+stats = pstats.Stats(PROFILE_FILE)
+stats.strip_dirs()
+stats.sort_stats('cumulative')
+stats.print_stats()
+
+
+os.remove(PROFILE_FILE)
+```
+
+New time profile of `main.Board()` with less important information removed:
+
+```bash
+   ncalls        tottime        percall        cumtime        percall filename:lineno(function)
+        1    0.000101966    0.000101966    0.000547117    0.000547117 {built-in method builtins.exec}
+        1    0.000020819    0.000020819    0.000445151    0.000445151 <string>:1(<module>)
+        1    0.000034229    0.000034229    0.000424332    0.000424332 main.py:156(__init__)
+        1    0.000028422    0.000028422    0.000144841    0.000144841 main.py:241(update_piece_bitboard_data)
+        1    0.000050988    0.000050988    0.000122660    0.000122660 main.py:231(write_bitboards_from_board)
+       13    0.000036795    0.000002830    0.000086924    0.000006686 main.py:87(__init__)
+        2    0.000025488    0.000012744    0.000086096    0.000043048 main.py:131(__init__)
+       16    0.000013199    0.000000825    0.000045158    0.000002822 main.py:37(__init__)
+        2    0.000008288    0.000004144    0.000023579    0.000011790 main.py:118(__init__)
+```
+
+Somehow, an isolated call of this function has greatly reduced the time it takes to run. I decided to profile `board.legal_moves()` instead. I removed less necessary data and placed linebreaks to divide groups of functions.
+
+```bash
+14662 function calls in 0.015 seconds
+
+   Ordered by: cumulative time
+
+   ncalls        tottime        percall        cumtime        percall filename:lineno(function)
+        # These functions take up the most time since they are the ones solely being run.
+        1    0.000068789    0.000068789    0.014797157    0.014797157 {built-in method builtins.exec}
+        1    0.000011602    0.000011602    0.014728368    0.014728368 <string>:1(<module>)
+       21    0.000135590    0.000006457    0.014716766    0.000700798 main.py:466(legal_moves)
+       20    0.000514539    0.000025727    0.014150576    0.000707529 main.py:480(isking_vulnerable)
+
+      # These functions take up a smaller portion of time but are likely called too frequently. They are also likely responsible for the first group of functions taking up time. 
+      441    0.000454351    0.000001030    0.005670641    0.000012859 main.py:448(legal_nocheck)
+       20    0.000023982    0.000001199    0.004602279    0.000230114 main.py:226(swap_turn)
+       20    0.000131900    0.000006595    0.004578297    0.000228915 main.py:156(__init__)
+      673    0.000526171    0.000000782    0.003258790    0.000004842 main.py:63(any)
+      189    0.001106007    0.000005852    0.002600554    0.000013760 main.py:404(piece_legal_nocheck)
+       20    0.001330027    0.000066501    0.002258369    0.000112918 main.py:241(update_piece_bitboard_data)
+
+      # These functions are minor but called very frequently. Optimisation may be difficult, so I will have to reduce the number of calls to these functions.
+      206    0.000445014    0.000002160    0.002086870    0.000010130 numeric.py:591(argwhere)
+      126    0.000594312    0.000004717    0.001884137    0.000014953 main.py:67(pos)
+       20    0.001135074    0.000056754    0.001510557    0.000075528 main.py:231(write_bitboards_from_board)
+       21    0.000104207    0.000004962    0.001402417    0.000066782 main.py:363(present_pieces)
+      420    0.000768917    0.000001831    0.001028237    0.000002448 main.py:296(move)
+      420    0.000534403    0.000001272    0.000804900    0.000001916 main.py:341(undo)
+      168    0.000710153    0.000004227    0.000776731    0.000004623 main.py:367(get_pawn_movement)
+
+     # These functions contribute to an immensely small portion of time and are likely not worth optimising.
+     3160    0.000668453    0.000000212    0.000668453    0.000000212 main.py:46(__setitem__)
+       40    0.000183381    0.000004585    0.000605640    0.000015141 main.py:131(__init__)
+      260    0.000220321    0.000000847    0.000450354    0.000001732 main.py:87(__init__)
+      320    0.000086243    0.000000270    0.000188758    0.000000590 main.py:37(__init__)
+       40    0.000034140    0.000000854    0.000119826    0.000002996 main.py:118(__init__)
+```
+
+I devised a list of functions to survey:
+
+1. `Board.legal_nocheck`
+    * Reduce calls within this function
+2. `Board.__init__`
+    * Reduce calls within this function
+3. `Board.piece_legal_nocheck`
+    * Reduce calls within this function
+4. `Board.present_pieces`
+    * Reduce calls to this function
+
+### `Board.legal_nocheck` Optimisation
+
+```py
+def legal_nocheck(self) -> Iterable[list[Coordinate, Coordinate]]:
+    """Get all legal moves without checking for checks.
+    Returns:
+        Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+    """
+
+    # moveable_pieces = list(set(self.present_pieces()) & set(self.self_pieces))
+    moveable_pieces = (piece for piece in self.self_pieces if piece.bb.any())
+
+    for piece in moveable_pieces:
+        if isinstance(piece, Pawn):
+            for x, y in piece.bb.pos():
+                for move in self.get_pawn_movement(x, y):
+                    yield move
+            pass
+        elif isinstance(piece, Piece):
+            for move in list(self.piece_legal_nocheck(piece)):
+                yield move
+```
+
+This line seemed inefficient:
+
+```py
+moveable_pieces = list(set(self.present_pieces()) & set(self.self_pieces))
+```
+
+I firstly checked whether `present_pieces` was called elsewhere, and it was not. Therefore, I could compact the above line into a generator only iterating through `self_pieces`.
+
+```py
+# moveable_pieces = list(set(self.present_pieces()) & set(self.self_pieces))
+moveable_pieces = (piece for piece in self.self_pieces if piece.bb.any())
+```
+
+Additionally, the function as a whole contains a lot of unnecessary lines that could be compacted into more concise code. After some research, I devised this:
+
+```py
+def legal_nocheck(self) -> Iterable[list[Coordinate, Coordinate]]:
+    """Get all legal moves without checking for checks.
+    Returns:
+        Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+    """
+
+    for piece in (p for p in self.self_pieces if p.bb.any()):
+        if isinstance(piece, Pawn):
+            for x, y in piece.bb.pos():
+                yield from self.get_pawn_movement(x, y)
+        else:
+            yield from self.piece_legal_nocheck(piece)
+```
+
+1. I could nest the generator into the iterator since it was only used once.
+2. I didn't need to redetermine the instance of the piece; an `else` statement would suffice.
+3. `yield from` is much more efficient than iterating and re-yielding, which deconstructs the generator.
+
+### `Board.__init__` Optimisation
+
+I first used `typing.Optional` instead of using the unary `|` operator to express optional parameters.
+
+```py
+def __init__(self, turn: Optional[Player] = None, board: Optional[np.ndarray] = None) -> None:
+```
+
+I then made some small changes improving readability and performance, detailed in comments:
+
+```py
+def __init__(self, turn: Optional[Player] = None, board: Optional[np.ndarray] = None) -> None:
+    """The class for the board.
+    Args:
+        turn (Player, optional): The player of whom it is their turn to move.
+        board (np.array, optional): A pre-existing array the board can take on. Defaults to an empty board if unspecified.
+    """
+
+    global PIECE_ID_INDEX
+    PIECE_ID_INDEX = -1
+
+    self.empty_piece = Piece(None, 'empty', False)
+    self.white = Player('white')
+    self.black = Player('black')
+    self.other_player = {
+        'white' : self.black,
+        'black' : self.white
+    }
+
+    # self.turn = self.white if turn is None else turn
+    self.turn = turn or self.white
+
+    # self.pieces: list[Piece] = [self.empty_piece] + self.white.pieces.copy() + self.black.pieces.copy()
+    self.pieces: list[Piece] = [self.empty_piece] + self.white.pieces + self.black.pieces
+
+    # self.board = np.zeros((8, 8), dtype=int) if board is None else board
+    self.board = board or np.zeros((8,8), dtype=int)
+
+    # board is an array of piece IDs
+    self.write_bitboards_from_board()
+    
+    # join IDS to pieces
+    # self.id: dict[int, Piece | Pawn] = {}
+    # for piece in self.pieces:
+    #     self.id[piece.id] = piece
+    self.id: dict[int, Piece | Pawn] = {piece.id : piece for piece in self.pieces}
+
+    self.last_piece_taken: None | Piece | Pawn = None
+    self.last_piece_moved: None | Piece | Pawn = None
+    self.last_move: None | tuple[Coordinate, Coordinate] = None
+
+    # self.self_pieces = self.white.pieces if self.turn.color == 'white' else self.black.pieces
+    # self.other_pieces = self.black.pieces if self.turn.color == 'white' else self.white.pieces
+    if self.turn.color == 'white':
+        self.self_pieces = self.white.pieces
+        self.other_pieces = self.black.pieces
+    else:
+        self.self_pieces = self.black.pieces
+        self.other_pieces = self.white.pieces
+
+    self.update_piece_bitboard_data()
+```
+
+### `Board.piece_legal_nocheck`
+
+```py
+def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
+    """Get all legal moves for a single piece, specified by class instance.
+    Args:
+        piece (Piece): The piece to check for legal moves.
+    Returns:
+        Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+    """
+
+    for x, y in piece.bb.pos():
+        for dx, dy in piece.movement:
+            rx, ry = x + dx, y + dy
+
+            # cannot 'capture' own piece
+            if (rx, ry) in self.self_pos:
+                continue
+            # out of bounds
+            if rx not in range(8) or ry not in range(8):
+                continue
+
+            # cannot movelong
+            if not piece.movelong:
+                yield [(x, y), (rx, ry)]
+                continue
+
+            for s in range(1, 9):
+                # scaled direction and resultant X and Y
+                sdx, sdy = dx * s, dy * s
+                rx, ry = x + sdx, y + sdy
+
+                # cannot be out of bounds
+                if rx not in range(8) or ry not in range(8):
+                    break
+
+                # cannot 'capture' own piece
+                if (rx, ry) in self.self_pos:
+                    break
+                # if capturing enemy piece, yield then break
+                if (rx, ry) in self.other_pos:
+                    yield [(x, y), (rx, ry)]
+                    break
+
+                # otherwise yield
+                yield [(x, y), (rx, ry)]
+```
+
+There wasn't much optimisation I could make here, aside from joining `if` statements and possibly writing an outside function to determine if two coordinates are out of bounds.
+
+Optimised version:
+
+```py
+def in_bounds(self, x, y) -> bool:
+    return 0 <= x < 8 and 0 <= y < 8
+
+def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
+    """Get all legal moves for a single piece, specified by class instance.
+    Args:
+        piece (Piece): The piece to check for legal moves.
+    Returns:
+        Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+    """
+
+    for x, y in piece.bb.pos():
+        for dx, dy in piece.movement:
+            rx, ry = x + dx, y + dy
+
+            # cannot 'capture' own piece or move out of bounds
+            if self.in_bounds(rx, ry) or (rx, ry) in self.self_pos:
+                continue
+
+            # cannot movelong
+            if not piece.movelong:
+                yield [(x, y), (rx, ry)]
+                continue
+
+            for s in range(1, 8):
+                # scaled direction and resultant X and Y
+                sdx, sdy = dx * s, dy * s
+                rx, ry = x + sdx, y + sdy
+
+                # cannot 'capture' own piece or move out of bounds
+                if not self.in_bounds(x, y) or (rx, ry) in self.self_pos:
+                    break
+                # if capturing enemy piece, yield then break
+                if (rx, ry) in self.other_pos:
+                    yield [(x, y), (rx, ry)]
+                    break
+
+                # otherwise yield
+                yield [(x, y), (rx, ry)]
+```
+
+### `Board.present_pieces`
+
+There are no longer any calls to this function; it does not require any optimisation.
