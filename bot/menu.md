@@ -58,3 +58,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print(f"\nGoodbye!")
 ```
+
+Firstly, I created a class, taking just the board as a *superparamater*.

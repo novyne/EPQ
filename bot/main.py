@@ -1,7 +1,7 @@
 # default modules
 import os
 
-from main import Board
+from ..board.main import Board
 
 try:
     # installed modules
@@ -18,19 +18,22 @@ except ModuleNotFoundError:
 ####################################################################################################
 
 
-# globals and pre-main functions go here :)
+# Globals & Pre-class Functions
 
 
 ###################################################################################################
 
 
-# classes go here :)
+class Computer(Board):
+
+    def __init__(self, board: Board) -> None:
+        super.__init__(board)
 
 
 ###################################################################################################
 
 
-# functions go here :)
+# Post-class Functions
 
 
 ###################################################################################################
@@ -38,6 +41,10 @@ except ModuleNotFoundError:
 
 def main() -> None:
     """The main program."""
+
+    board = Board().default()
+
+    computer = Computer(board)
 
 if __name__ == '__main__':
     try:

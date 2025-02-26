@@ -153,6 +153,8 @@ class Player:
 
 class Board:
 
+    """Chess board class."""
+
     def __init__(self, turn: Optional[Player] = None, board: Optional[np.ndarray] = None) -> None:
         """The class for the board.
         Args:
