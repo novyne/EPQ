@@ -6,7 +6,7 @@ import random as rn
 
 from typing import Literal, NewType, Iterable, Optional
 
-from interface import App
+from board.interface import App
 
 try:
     # installed modules

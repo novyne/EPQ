@@ -56,7 +56,41 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\nGoodbye!")
+        print(f"\nExecution interrupted.")
 ```
 
-Firstly, I created a class, taking just the board as a *superparamater*.
+Firstly, I created a computer class, taking just the board as a parameter.
+
+```py
+class Computer:
+
+    def __init__(self, board: Board) -> None:
+        self.board = board
+
+
+###################################################################################################
+
+
+# Post-class Functions
+
+
+###################################################################################################
+
+
+def main() -> None:
+    """The main program."""
+
+    board: Board = Board().default()
+    computer = Computer(board)
+```
+
+Here is a reminder of the plan to create the backbone of the computer.
+
+* Use a recursive method to 'search' every move `n` moves in the future
+* Score the board position with an algorithm
+* Apply a *minmaxing* algorithm to decide the move required to maximise / minimise the best possible score.
+
+The first part of the plan would be to create the recursive search.
+
+### The Search Algorithm
+

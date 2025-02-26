@@ -1,7 +1,7 @@
 # default modules
 import os
 
-from ..board.main import Board
+from board.main import Board
 
 try:
     # installed modules
@@ -24,10 +24,12 @@ except ModuleNotFoundError:
 ###################################################################################################
 
 
-class Computer(Board):
+class Computer:
 
     def __init__(self, board: Board) -> None:
-        super.__init__(board)
+        self.board = board
+
+    def recursive_search()
 
 
 ###################################################################################################
@@ -42,12 +44,11 @@ class Computer(Board):
 def main() -> None:
     """The main program."""
 
-    board = Board().default()
-
+    board: Board = Board().default()
     computer = Computer(board)
 
 if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\nGoodbye!")
+        print(f"\nExecution interrupted.")
