@@ -1,10 +1,7 @@
-r"""
-# Requiem Chess Bot.
-## \~Coded for an A Level EPQ~
-rn this thing is **CHEEKS!**"""
-
 # default modules
 import os
+
+from main import Board
 
 try:
     # installed modules
