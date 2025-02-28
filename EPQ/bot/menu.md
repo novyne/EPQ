@@ -694,7 +694,7 @@ def find_best_move(self, depth: int) -> tuple[int,int,int,int]:
     return best_move
 ```
 
-### func
+### `board:Bitboard.any`
 
 Here is the time profile for the 10 slowest functions in `Computer.find_best_move`:
 
@@ -716,11 +716,7 @@ Here is the time profile for the 10 slowest functions in `Computer.find_best_mov
    433706    1.133523286    0.000002614    1.617125266    0.000003729 main.py:310(move)
 ```
 
-### Call Reduction
-
-#### `board:Bitboard.any`
-
-The major call of this function was in `Board.legal_nocheck`:
+The major call of this `Bitboard.any` was in `Board.legal_nocheck`:
 
 ```py
 def legal_nocheck(self) -> Iterable[list[Coordinate, Coordinate]]:
@@ -819,3 +815,53 @@ After a lot of debugging, here is an extract of the time profile:
 Unfortunately, the time overall increased significantly. I undid the changes.
 
 I removed the noise on the evaluation so results no longer varied massively.
+
+### `Computer.minmax`
+
+#### Alpha-Beta Pruning
+
+A popular technique called **Alpha-Beta Pruning** could be implemented to reduce the move tree that needs to be searched.
+
+Here is the new function:
+
+```py
+def minmax(self, remaining_depth: int, board: Board, alpha: float = -float('inf'), beta: float = float('inf')) -> float:
+    """Use minmax with alpha-beta pruning to score a position.
+    Args:
+        remaining_depth (int): The remaining depth of the search.
+        board (Board): The board state to apply minmax to.
+        alpha (float): The alpha variable for Alpha-Beta Pruning.
+        beta (float): The beta variable for Alpha-Beta Pruning.
+    Returns:
+        float: The score.
+    """
+
+    if remaining_depth == 0:
+        return self.evaluate(board)
+    
+    scores = []
+    
+    for [(x1, y1), (x2, y2)] in list(board.legal_moves()):
+        board.move(x1, y1, x2, y2)
+        board.swap_turn()
+
+        score = self.minmax(remaining_depth - 1, board, alpha, beta)
+        scores.append(score)
+
+        board.swap_turn()
+        board.undo()
+
+        # Alpha-Beta pruning
+        ismaximising = self.board.turn.color != 'white'
+        if ismaximising:
+            alpha = max(alpha, score)
+        else:
+            beta = min(beta, score)
+        
+        if beta <= alpha:
+            break  # Prune the remaining branches
+    
+    return max(scores) if ismaximising else min(scores)
+```
+
+I won't show the time profile for this function; there won't be evidence of change at this low a depth.

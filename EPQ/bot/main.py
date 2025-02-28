@@ -3,7 +3,9 @@ import cProfile
 import os
 import random as rn
 
-from EPQ.bot.board.board import Board
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+from board.board import Board
 
 try:
     # installed modules
@@ -38,11 +40,13 @@ class Computer:
 
         self.material = [0] + [1, 3, 3.25, 5, 9, float('inf')] * 2
     
-    def minmax(self, remaining_depth: int, board: Board) -> float:
-        """Use minmax to score a position by searching through a movetree down a given depth.
+    def minmax(self, remaining_depth: int, board: Board, alpha: float = -float('inf'), beta: float = float('inf')) -> float:
+        """Use minmax with alpha-beta pruning to score a position.
         Args:
             remaining_depth (int): The remaining depth of the search.
             board (Board): The board state to apply minmax to.
+            alpha (float): The alpha variable for Alpha-Beta Pruning.
+            beta (float): The beta variable for Alpha-Beta Pruning.
         Returns:
             float: The score.
         """
@@ -56,15 +60,24 @@ class Computer:
             board.move(x1, y1, x2, y2)
             board.swap_turn()
 
-            score = self.minmax(remaining_depth - 1, board)
+            score = self.minmax(remaining_depth - 1, board, alpha, beta)
             scores.append(score)
 
             board.swap_turn()
             board.undo()
+
+            # Alpha-Beta pruning
+            ismaximising = self.board.turn.color != 'white'
+            if ismaximising:
+                alpha = max(alpha, score)
+            else:
+                beta = min(beta, score)
+            
+            if beta <= alpha:
+                break  # orune the remaining branches
         
-        ismaximising = self.board.turn.color != 'white'
         return max(scores) if ismaximising else min(scores)
-    
+
     def evaluate(self, board: Board) -> float:
         """Score a given board position.
         Args:
@@ -142,6 +155,6 @@ def main() -> None:
 
 if __name__ == '__main__':
     try:
-        cProfile.run('main()',sort='cumulative')
+        main()
     except KeyboardInterrupt:
         print(f"\nExecution interrupted.")
