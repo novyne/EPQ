@@ -143,7 +143,7 @@ class Player:
         self.queen = Piece(color=color, name='queen', movelong=True)
         self.king = Piece(color=color, name='king', movelong=False)
 
-        self.pieces = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
+        self.pieces: list[Piece] = [self.pawn, self.knight, self.bishop, self.rook, self.queen, self.king]
 
     def print_ids(self) -> None:
         """Print the IDs of each piece for this player."""
@@ -184,9 +184,9 @@ class Board:
         # join IDS to pieces
         self.id: dict[int, Piece | Pawn] = {piece.id : piece for piece in self.pieces}
 
-        self.last_piece_taken: None | Piece | Pawn = None
-        self.last_piece_moved: None | Piece | Pawn = None
-        self.last_move: None | tuple[Coordinate, Coordinate] = None
+        self.last_pieces_taken: list[Piece | Pawn] = []
+        self.last_pieces_moved: list[Piece | Pawn] = []
+        self.last_moves: list[tuple[Coordinate, Coordinate]] = []
 
         if self.turn.color == 'white':
             self.self_pieces = self.white.pieces
@@ -227,11 +227,21 @@ class Board:
         """Return a duplicate Board instance."""
         return Board(self.turn, self.board)
 
-    def swap_turn(self) -> 'Board':
-        """Swap the turn of the board."""
+    def swap_turn_with_new_instance(self) -> 'Board':
+        """Like swap_turn, but returns a new instance instead."""
+
         swapped_turn = self.other_player[self.turn.color]
         return Board(swapped_turn, self.board)
     
+    def swap_turn(self) -> None:
+        """Changes the turn on the board and swaps necessary variables."""
+        swapped_turn = self.other_player[self.turn.color]
+        self.turn = swapped_turn
+
+        self.self_bb, self.other_bb = self.other_bb, self.self_bb
+        self.self_pieces, self.other_pieces = self.other_pieces, self.self_pieces
+        self.self_pos, self.other_pos = self.other_pos, self.self_pos
+
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
         id_map = {piece.id: piece for piece in self.pieces}
@@ -313,6 +323,10 @@ class Board:
         x2, y2 = y2, x2
 
         start_id = self.board[x1, y1]
+
+        if start_id == 0:
+            raise ValueError(f"""Cannot move empty square. ({x1} {y1} to {x2} {y2})\n\n{self}""")
+
         start_piece = self.id[start_id]
         end_id = self.board[x2, y2]
         end_piece = self.id[end_id]
@@ -328,9 +342,9 @@ class Board:
         self.board[x2, y2] = start_id
 
         # update last move data
-        self.last_piece_taken = end_piece
-        self.last_piece_moved = start_piece
-        self.last_move = (x1, y1), (x2, y2)
+        self.last_pieces_taken.append(end_piece)
+        self.last_pieces_moved.append(start_piece)
+        self.last_moves.append(((x1, y1), (x2, y2)))
 
         # update crucial bitboard data
         # self.self_bb[x1, y1] = 0
@@ -345,14 +359,16 @@ class Board:
     def undo(self) -> None:
         """Undo the previous move."""
 
-        (x1, y1), (x2, y2) = self.last_move
+        (x1, y1), (x2, y2) = self.last_moves.pop()
+        last_piece_taken = self.last_pieces_taken.pop()
+        last_piece_moved = self.last_pieces_moved.pop()
     
-        self.last_piece_taken.bb[x2, y2] = 1
-        self.board[x2, y2] = self.last_piece_taken.id
+        last_piece_taken.bb[x2, y2] = 1
+        self.board[x2, y2] = last_piece_taken.id
 
-        self.last_piece_moved.bb[x2, y2] = 0
-        self.last_piece_moved.bb[x1, y1] = 1
-        self.board[x1, y1] = self.last_piece_moved.id
+        last_piece_moved.bb[x2, y2] = 0
+        last_piece_moved.bb[x1, y1] = 1
+        self.board[x1, y1] = last_piece_moved.id
 
         # update crucial bitboard data
         # self.self_bb[x1, y1] = 1
@@ -368,16 +384,14 @@ class Board:
     #     """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
     #     return [piece for piece in self.pieces if piece.bb.any() and piece.id != 0]
 
-    def get_pawn_movement(self, x: int, y: int) -> list[list[Coordinate, Coordinate]]:
+    def get_pawn_movement(self, x: int, y: int) -> Iterable[list[Coordinate, Coordinate]]:
         """Obtain the possible movement of a pawn based on its position and colour.
         Args:
             x (int): The X coordinate of the pawn.
             y (int): The Y coordinate of the pawn.
         Returns:
-            list(list[Coordinate, Coordinate]): The list of coordinates denoting where the pawn is allowed to move.
+            Iterable(list[Coordinate, Coordinate]): The list of coordinates denoting where the pawn is allowed to move.
         """
-
-        movement: list[list[Coordinate, Coordinate]] = []
 
         # y direction to check in
         if self.turn.color == 'white':
@@ -389,21 +403,21 @@ class Board:
         for dx in (1, -1):
             
             if (x+dx, y+dy) in self.other_pos:
-                movement.append([(x, y), (x+dx, y+dy)])
+                yield [(x, y), (x+dx, y+dy)]
 
         # check if the square ahead is occupied
         if (x, y+dy) in self.all_pos:
-            return movement
-        movement.append([(x, y), (x, y+dy)])
+            return
+        yield [(x, y), (x, y+dy)]
 
         # check whether the pawn can move 2 squares forward
         if (x, y+(dy*2)) in self.all_pos:
-            return movement
+            return
         if self.turn.color == 'white' and y == 1:
-            movement.append([(x, y), (x, y+(dy*2))])
+            yield [(x, y), (x, y+(dy*2))]
         elif self.turn.color == 'black' and y == 6:
-            movement.append([(x, y), (x, y+(dy*2))])
-        return movement
+            yield [(x, y), (x, y+(dy*2))]
+        return
 
     def in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < 8 and 0 <= y < 8
@@ -444,6 +458,38 @@ class Board:
 
                     # otherwise yield
                     yield [(x, y), (rx, ry)]
+    
+    def new_piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
+        """Get all legal moves for a single piece, specified by class instance.
+        Args:
+            piece (Piece): The piece to check for legal moves.
+        Returns:
+            Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+        """
+
+        for x, y in piece.bb.pos():
+            for dx, dy in piece.movement:
+                for s in range(9):
+                    # scaled direction and resultant X and Y
+                    sdx, sdy = dx * s, dy * s
+                    rx, ry = x + sdx, y + sdy
+
+                    # cannot 'capture' own piece or move out of bounds
+                    if not self.in_bounds(rx, ry) or (rx, ry) in self.self_pos:
+                        break
+
+                    # cannot movelong
+                    if not piece.movelong:
+                        yield [(x, y), (rx, ry)]
+                        break
+
+                    # if capturing enemy piece, yield then break
+                    if (rx, ry) in self.other_pos:
+                        yield [(x, y), (rx, ry)]
+                        break
+
+                    # otherwise yield
+                    yield [(x, y), (rx, ry)]
 
     def legal_nocheck(self) -> Iterable[list[Coordinate, Coordinate]]:
         """Get all legal moves without checking for checks.
@@ -471,7 +517,7 @@ class Board:
             if not self.isking_vulnerable():
                 yield [(x1, y1), (x2, y2)]
             self.undo()
-
+    
     def isking_vulnerable(self) -> bool:
         """Return whether the turn player's king can be taken.
         Returns:
@@ -479,19 +525,21 @@ class Board:
         """
 
         # obtain the legal moves for the other player
-        other_board = self.swap_turn()
-        other_legals_nocheck = other_board.legal_nocheck()
+        self.swap_turn()
+        other_legals_nocheck = self.legal_nocheck()
 
         for [(x1, y1), (x2, y2)] in other_legals_nocheck:
-            other_board.move(x1, y1, x2, y2)
-            king = other_board.other_player[other_board.turn.color].king # obtain the CURRENT player's king
+            self.move(x1, y1, x2, y2)
+            king = self.other_player[self.turn.color].king # obtain the CURRENT player's king
 
             # if the king is not present, return True
             if not king.bb.any():
-                other_board.undo()
+                self.undo()
+                self.swap_turn()
                 return True
             
-            other_board.undo()
+            self.undo()
+        self.swap_turn()
         return False
 
 
@@ -511,8 +559,8 @@ def random_game() -> None:
                     [4, 2, 3, 5, 6, 3, 2, 4]
                     ][::-1]
 
-    # board = Board().default()
-    board = Board(board=np.array(custom_board))
+    board = Board().default()
+    # board = Board(board=np.array(custom_board))
 
     while True:
         legals = list(board.legal_moves())
@@ -526,7 +574,7 @@ def random_game() -> None:
         print(f"{board.turn.color} moves: {chr(x1 + 97)}{y1+1} -> {chr(x2 + 97)}{y2+1}")
 
         board.move(x1, y1, x2, y2)
-        board = board.swap_turn()
+        board.swap_turn()
 
         print(board)
 
@@ -538,9 +586,10 @@ def main() -> None:
     """The main program."""
 
     random_game()
-    
+    # board = Board().default()
+
     # app = App()
     # app.mainloop()
 
 if __name__ == '__main__':
-    cProfile.run('main()',sort='cumulative')
+    main()

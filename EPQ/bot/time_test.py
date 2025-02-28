@@ -26,8 +26,7 @@ warmup()
 
 #############################################################################################################################
 
-board = main.Board().default()
-cProfile.run('list(board.legal_moves())',PROFILE_FILE,sort='cumulative')
+cProfile.run('main.main()',PROFILE_FILE,sort='cumulative')
 
 stats = pstats.Stats(PROFILE_FILE)
 stats.strip_dirs()
