@@ -4262,3 +4262,16 @@ def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordin
 ### `Board.present_pieces`
 
 There are no longer any calls to this function; it does not require any optimisation.
+
+### Special Moves
+
+There are three special moves in Chess which heavily depend on circumstances;
+
+* Promotion
+  * A pawn can transform to any other piece besides the king once it reaches the final rank on the board.
+* *En Passant*
+  * When a pawn moves two spaces forward and lands adjacent to an enemy pawn, only on the next turn, the pawn may capture it and land behind where it moved.
+* Castling
+  * The king and rook can perform a special move in which the king slides 2 squares to the side and the rook jumps so it lands one square to the king's opposite side. Only allowed if the respective king and rook have not moved.
+
+#### Promotion

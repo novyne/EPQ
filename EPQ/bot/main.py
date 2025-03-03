@@ -143,9 +143,9 @@ def main() -> None:
 
     board: Board = Board().default()
 
-    for _ in range(25):
+    for _ in range(50):
         computer = Computer(board)
-        x1, y1, x2, y2 = computer.find_best_move(depth=2)
+        x1, y1, x2, y2 = computer.find_best_move(depth=3)
         board.move(x1, y1, x2, y2)
         board.swap_turn()
         print(board)

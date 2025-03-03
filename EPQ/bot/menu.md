@@ -394,7 +394,7 @@ I then profiled it using `time_test.py`.
 
 Here are the top 10 culprits:
 
-```plaintext
+```bash
    ncalls  tottime  percall  cumtime  percall filename:lineno(function)
         5   0.0012   0.0002   3.5655   0.7131 main.py:90(find_best_move)
  3352/124   0.0238   0.0000   3.4390   0.0277 main.py:41(minmax)

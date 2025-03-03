@@ -6,7 +6,7 @@ import random as rn
 
 from typing import Literal, NewType, Iterable, Optional
 
-from board.interface import App
+from interface import App
 
 try:
     # installed modules
@@ -66,6 +66,9 @@ class Bitboard:
     
     def pos(self) -> list[Coordinate]:
         return [(y, x) for x, y in np.argwhere(self.bb)]
+    
+    def copy(self) -> 'Bitboard':
+        return Bitboard(self.bb.copy())
 
 
 ###################################################################################################
@@ -238,9 +241,9 @@ class Board:
         swapped_turn = self.other_player[self.turn.color]
         self.turn = swapped_turn
 
-        self.self_bb, self.other_bb = self.other_bb, self.self_bb
-        self.self_pieces, self.other_pieces = self.other_pieces, self.self_pieces
-        self.self_pos, self.other_pos = self.other_pos, self.self_pos
+        self.self_bb, self.other_bb = self.other_bb.copy(), self.self_bb.copy()
+        self.self_pieces, self.other_pieces = self.other_pieces.copy(), self.self_pieces.copy()
+        self.self_pos, self.other_pos = self.other_pos.copy(), self.self_pos.copy()
 
     def write_bitboards_from_board(self) -> None:
         """Write the piece bitboards from a board state."""
@@ -512,7 +515,7 @@ class Board:
 
         legals_nocheck = self.legal_nocheck()
 
-        for [(x1, y1), (x2, y2)] in legals_nocheck:
+        for [(x1, y1), (x2, y2)] in list(legals_nocheck):
             self.move(x1, y1, x2, y2)
             if not self.isking_vulnerable():
                 yield [(x1, y1), (x2, y2)]
@@ -525,7 +528,8 @@ class Board:
         """
 
         # obtain the legal moves for the other player
-        self.swap_turn()
+        self = self.swap_turn_with_new_instance()
+        # self.swap_turn()
         other_legals_nocheck = self.legal_nocheck()
 
         for [(x1, y1), (x2, y2)] in other_legals_nocheck:
@@ -535,11 +539,13 @@ class Board:
             # if the king is not present, return True
             if not king.bb.any():
                 self.undo()
-                self.swap_turn()
+                # self.swap_turn()
+                self = self.swap_turn_with_new_instance()
                 return True
             
             self.undo()
-        self.swap_turn()
+        # self.swap_turn()
+        self = self.swap_turn_with_new_instance()
         return False
 
 
@@ -574,9 +580,10 @@ def random_game() -> None:
         print(f"{board.turn.color} moves: {chr(x1 + 97)}{y1+1} -> {chr(x2 + 97)}{y2+1}")
 
         board.move(x1, y1, x2, y2)
-        board.swap_turn()
+        board = board.swap_turn_with_new_instance()
 
         print(board)
+        # input()
 
 
 ###################################################################################################
