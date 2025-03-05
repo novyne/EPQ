@@ -4275,3 +4275,87 @@ There are three special moves in Chess which heavily depend on circumstances;
   * The king and rook can perform a special move in which the king slides 2 squares to the side and the rook jumps so it lands one square to the king's opposite side. Only allowed if the respective king and rook have not moved.
 
 #### Promotion
+
+This change would be simple to implement:
+
+* Change the move format to add a *promotion* piece alongside it.
+* Add promotion to `get_pawn_movement`.
+
+To make the move format change easier, I can add an *optional* parameter to `Board.move` so I wouldn't need to change each move call.
+
+```py
+def move(self, x1: int, y1: int, x2: int, y2: int, promotion: Optional[int] = None) -> None:
+    """Move a piece at (x1, y1) to (x2, y2).
+    Args:
+        x1 (int): The starting X coordinate.
+        y1 (int): The starting Y coordinate.
+        x2 (int): The destination X coordinate.
+        y2 (int): The destination Y coordinate.
+        promotion (int, optional): The ID of the piece to promote to if applicable.
+    Returns:
+        Board: The new board state.
+    """
+
+    ...
+    start_id = promotion or self.board[x1, y1]
+    ...
+    if promotion is None:
+        self.last_pieces_moved.append(self.id[self.board[x2, y2]])
+    else:
+        self.last_pieces_moved.append(self.id[promotion]
+    ...
+```
+
+```py
+def get_pawn_movement(self, x: int, y: int) -> Iterable[list[Coordinate, Coordinate]]:
+    """Obtain the possible movement of a pawn based on its position and colour.
+    Args:
+        x (int): The X coordinate of the pawn.
+        y (int): The Y coordinate of the pawn.
+    Returns:
+        Iterable(list[Coordinate, Coordinate]): The list of coordinates denoting where the pawn is allowed to move.
+    """
+
+    def legal_pawn_no_promotion() -> Iterable[list[Coordinate]]:
+        """Helper function."""
+
+        # y direction to check in
+        dy = 1 if self.turn.color == 'white' else -1
+
+        # capture
+        for dx in (1, -1):
+            if (x+dx, y+dy) in self.other_pos:
+                yield [(x, y), (x+dx, y+dy)]
+
+        # check if the square ahead is occupied
+        if (x, y+dy) in self.all_pos:
+            return
+        yield [(x, y), (x, y+dy)]
+
+        # check whether the pawn can move 2 squares forward
+        if (x, y+(dy*2)) in self.all_pos:
+            return
+        if self.turn.color == 'white' and y == 1:
+            yield [(x, y), (x, y+(dy*2))]
+        elif self.turn.color == 'black' and y == 6:
+            yield [(x, y), (x, y+(dy*2))]
+        return
+    
+    prom_rank = 7 if self.turn.color == 'white' else 0
+    promotions = [2,3,4,5] if self.turn.color == 'white' else [8,9,10,11]
+
+    for [(x1,y1),(x2,y2)] in legal_pawn_no_promotion():
+        if y2 == prom_rank:
+            for p in promotions:
+                yield [(x1,y1),(x2,y2),p]
+        else:
+            yield [(x1,y1),(x2,y2)]
+```
+
+I also decided to create a `Move` type at the top of the document.
+
+```py
+Move = list[Coordinate, Coordinate, Optional[int]]
+```
+
+I then updated each function that yielded or unpacked moves to account for the promotion.

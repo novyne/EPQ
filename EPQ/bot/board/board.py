@@ -23,6 +23,7 @@ except ModuleNotFoundError:
 
 
 Coordinate = NewType('Coordinate', tuple[int,int])
+Move = NewType('Move', list[Coordinate, Coordinate, Optional[int]])
 
 def cformat(x: int, y: int) -> str:
     """Format coordinates into Chess coordinates."""
@@ -310,13 +311,14 @@ class Board:
             print(f"ID: {piece.id}")
             print(piece.bb)
     
-    def move(self, x1: int, y1: int, x2: int, y2: int) -> None:
+    def move(self, x1: int, y1: int, x2: int, y2: int, promotion: Optional[int] = None) -> None:
         """Move a piece at (x1, y1) to (x2, y2).
         Args:
-            x1: The starting X coordinate.
-            y1: The starting Y coordinate.
-            x2: The destination X coordinate.
-            y2: The destination Y coordinate.
+            x1 (int): The starting X coordinate.
+            y1 (int): The starting Y coordinate.
+            x2 (int): The destination X coordinate.
+            y2 (int): The destination Y coordinate.
+            promotion (int, optional): The ID of the piece to promote to if applicable.
         Returns:
             Board: The new board state.
         """
@@ -325,11 +327,10 @@ class Board:
         x1, y1 = y1, x1
         x2, y2 = y2, x2
 
-        start_id = self.board[x1, y1]
-
-        if start_id == 0:
+        if self.board[x1, y1] == 0:
             raise ValueError(f"""Cannot move empty square. ({x1} {y1} to {x2} {y2})\n\n{self}""")
 
+        start_id = promotion or self.board[x1, y1]
         start_piece = self.id[start_id]
         end_id = self.board[x2, y2]
         end_piece = self.id[end_id]
@@ -346,7 +347,10 @@ class Board:
 
         # update last move data
         self.last_pieces_taken.append(end_piece)
-        self.last_pieces_moved.append(start_piece)
+        if promotion is None:
+            self.last_pieces_moved.append(self.id[self.board[x2, y2]])
+        else:
+            self.last_pieces_moved.append(self.id[promotion])
         self.last_moves.append(((x1, y1), (x2, y2)))
 
         # update crucial bitboard data
@@ -387,50 +391,64 @@ class Board:
     #     """Get the present piece types; i.e. pieces that do not have an empty bitboard."""
     #     return [piece for piece in self.pieces if piece.bb.any() and piece.id != 0]
 
-    def get_pawn_movement(self, x: int, y: int) -> Iterable[list[Coordinate, Coordinate]]:
+    def get_pawn_movement(self, x: int, y: int) -> Iterable[Move]:
         """Obtain the possible movement of a pawn based on its position and colour.
         Args:
             x (int): The X coordinate of the pawn.
             y (int): The Y coordinate of the pawn.
         Returns:
-            Iterable(list[Coordinate, Coordinate]): The list of coordinates denoting where the pawn is allowed to move.
+            Iterable(list):
+                Coordinate: The starting coordinate.
+
+                Coordinate: The end coordinate.
+
+                Optional[int]: The optional promotion ID.
         """
 
-        # y direction to check in
-        if self.turn.color == 'white':
-            dy = 1
-        else:
-            dy = -1
+        def legal_pawn_no_promotion() -> Iterable[list[Coordinate]]:
+            """Helper function."""
 
-        # capture
-        for dx in (1, -1):
-            
-            if (x+dx, y+dy) in self.other_pos:
-                yield [(x, y), (x+dx, y+dy)]
+            # y direction to check in
+            dy = 1 if self.turn.color == 'white' else -1
 
-        # check if the square ahead is occupied
-        if (x, y+dy) in self.all_pos:
+            # capture
+            for dx in (1, -1):
+                if (x+dx, y+dy) in self.other_pos:
+                    yield [(x, y), (x+dx, y+dy)]
+
+            # check if the square ahead is occupied
+            if (x, y+dy) in self.all_pos:
+                return
+            yield [(x, y), (x, y+dy)]
+
+            # check whether the pawn can move 2 squares forward
+            if (x, y+(dy*2)) in self.all_pos:
+                return
+            if self.turn.color == 'white' and y == 1:
+                yield [(x, y), (x, y+(dy*2))]
+            elif self.turn.color == 'black' and y == 6:
+                yield [(x, y), (x, y+(dy*2))]
             return
-        yield [(x, y), (x, y+dy)]
+        
+        prom_rank = 7 if self.turn.color == 'white' else 0
+        promotions = [2,3,4,5] if self.turn.color == 'white' else [8,9,10,11]
 
-        # check whether the pawn can move 2 squares forward
-        if (x, y+(dy*2)) in self.all_pos:
-            return
-        if self.turn.color == 'white' and y == 1:
-            yield [(x, y), (x, y+(dy*2))]
-        elif self.turn.color == 'black' and y == 6:
-            yield [(x, y), (x, y+(dy*2))]
-        return
+        for [(x1,y1),(x2,y2)] in legal_pawn_no_promotion():
+            if y2 == prom_rank:
+                for p in promotions:
+                    yield [(x1,y1),(x2,y2), p]
+            else:
+                yield [(x1,y1),(x2,y2), None]
 
     def in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < 8 and 0 <= y < 8
 
-    def piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
+    def piece_legal_nocheck(self, piece: Piece) -> Iterable[Move]:
         """Get all legal moves for a single piece, specified by class instance.
         Args:
             piece (Piece): The piece to check for legal moves.
         Returns:
-            Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+            Iterable(Move): An iterable of possible moves.
         """
 
         for x, y in piece.bb.pos():
@@ -443,7 +461,7 @@ class Board:
 
                 # cannot movelong
                 if not piece.movelong:
-                    yield [(x, y), (rx, ry)]
+                    yield [(x, y), (rx, ry), None]
                     continue
 
                 for s in range(1, 9):
@@ -456,18 +474,18 @@ class Board:
                         break
                     # if capturing enemy piece, yield then break
                     if (rx, ry) in self.other_pos:
-                        yield [(x, y), (rx, ry)]
+                        yield [(x, y), (rx, ry), None]
                         break
 
                     # otherwise yield
-                    yield [(x, y), (rx, ry)]
+                    yield [(x, y), (rx, ry), None]
     
-    def new_piece_legal_nocheck(self, piece: Piece) -> Iterable[list[Coordinate, Coordinate]]:
+    def new_piece_legal_nocheck(self, piece: Piece) -> Iterable[Move]:
         """Get all legal moves for a single piece, specified by class instance.
         Args:
             piece (Piece): The piece to check for legal moves.
         Returns:
-            Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+            Iterable(Move): An iterable of moves.
         """
 
         for x, y in piece.bb.pos():
@@ -483,21 +501,21 @@ class Board:
 
                     # cannot movelong
                     if not piece.movelong:
-                        yield [(x, y), (rx, ry)]
+                        yield [(x, y), (rx, ry), None]
                         break
 
                     # if capturing enemy piece, yield then break
                     if (rx, ry) in self.other_pos:
-                        yield [(x, y), (rx, ry)]
+                        yield [(x, y), (rx, ry), None]
                         break
 
                     # otherwise yield
-                    yield [(x, y), (rx, ry)]
+                    yield [(x, y), (rx, ry), None]
 
-    def legal_nocheck(self) -> Iterable[list[Coordinate, Coordinate]]:
+    def legal_nocheck(self) -> Iterable[Move]:
         """Get all legal moves without checking for checks.
         Returns:
-            Iterable(list[Coordinate, Coordinate]): An iterable of pairs of coordinates describing the movement.
+            Iterable(Move): An iterable of moves.
         """
 
         for piece in (p for p in self.self_pieces if p.bb.any()):
@@ -507,18 +525,18 @@ class Board:
             else:
                 yield from self.piece_legal_nocheck(piece)
 
-    def legal_moves(self) -> Iterable[list[Coordinate, Coordinate]]:
+    def legal_moves(self) -> Iterable[Move]:
         """Find all legal moves on the board.
         Returns:
-            Iterable(list[Coordinate, Coordinate]): The legal moves in pairs of coordinates.
+            Iterable(Move): The legal moves.
         """
 
         legals_nocheck = self.legal_nocheck()
 
-        for [(x1, y1), (x2, y2)] in list(legals_nocheck):
+        for [(x1, y1), (x2, y2), promotion] in list(legals_nocheck):
             self.move(x1, y1, x2, y2)
             if not self.isking_vulnerable():
-                yield [(x1, y1), (x2, y2)]
+                yield [(x1, y1), (x2, y2), promotion]
             self.undo()
     
     def isking_vulnerable(self) -> bool:
@@ -532,8 +550,8 @@ class Board:
         # self.swap_turn()
         other_legals_nocheck = self.legal_nocheck()
 
-        for [(x1, y1), (x2, y2)] in other_legals_nocheck:
-            self.move(x1, y1, x2, y2)
+        for [(x1, y1), (x2, y2), promotion] in other_legals_nocheck:
+            self.move(x1, y1, x2, y2, promotion)
             king = self.other_player[self.turn.color].king # obtain the CURRENT player's king
 
             # if the king is not present, return True
@@ -576,10 +594,10 @@ def random_game() -> None:
             break
 
         random_move = rn.choice(legals)
-        [(x1, y1), (x2, y2)] = random_move
+        [(x1, y1), (x2, y2), promotion] = random_move
         print(f"{board.turn.color} moves: {chr(x1 + 97)}{y1+1} -> {chr(x2 + 97)}{y2+1}")
 
-        board.move(x1, y1, x2, y2)
+        board.move(x1, y1, x2, y2, promotion)
         board = board.swap_turn_with_new_instance()
 
         print(board)
